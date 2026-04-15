@@ -2,7 +2,7 @@
 
 ## Overview
 
-OrchestrateAI is a professional multi-agent AI orchestrator web app for college students. It routes student queries to specialized AI agents and uses Gemini AI (via Replit AI Integrations) for all responses. Built as a full-stack React + Vite app in a pnpm monorepo.
+OrchestrateAI is a polished multi-agent AI orchestrator web app for college students. It routes student queries to specialized AI agents and provides a premium dark SaaS-style interface for career planning, learning, coding, vision analysis, resume building, interview prep, project ideation, study planning, skill-gap analysis, competitive exam guidance, and progress tracking.
 
 ## Stack
 
@@ -10,48 +10,46 @@ OrchestrateAI is a professional multi-agent AI orchestrator web app for college 
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **Frontend**: React + Vite (artifacts/orchestrate-ai)
-- **Backend**: Express 5 (artifacts/api-server)
-- **Database**: PostgreSQL + Drizzle ORM (conversations, messages tables)
-- **AI**: Gemini via Replit AI Integrations (`@workspace/integrations-gemini-ai`)
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite (`artifacts/orchestrate-ai`)
+- **UI**: Tailwind CSS, Radix UI primitives, lucide-react, wouter
+- **State**: React Context + localStorage
+- **AI providers**: Browser-side user API keys for Gemini, Groq, and OpenRouter-compatible models
+
+## Current Architecture
+
+The current app is a frontend-only React artifact served at `/`. User auth, API keys, model selection, agent selection, chat history, and conversation state are stored in localStorage. AI requests are sent directly from the browser using API keys entered by the user in the app settings.
 
 ## Features
 
-- Login/Signup with session via localStorage (demo auth, no real auth)
-- Profile setup with domain selection (BTech CS - AI/ML, Cybersecurity, etc.)
-- Dark/light mode toggle (next-themes)
-- Fake LLM selector dropdown (11 models — all route to Gemini 3 Flash behind scenes)
-- 11 Specialized AI Agents:
-  1. Career Agent — Resume analysis, AI risk scores, roadmaps
-  2. Learning Agent — Domain roadmaps, free resources, mini-projects
-  3. Code Judge — Code evaluation, test cases, complexity
-  4. Vision Agent — Solve handwritten/photo problems (multimodal)
-  5. Resume Builder — ATS optimization, improvements
-  6. Interview Prep — Mock questions + STAR answers
-  7. Project Ideas — 5 innovative ideas with tech stack
-  8. Study Planner — Personalized schedules
-  9. Skill Gap Analyzer — Skills vs 2026 industry requirements
+- Password login with access code `dhruv111`
+- Premium modern dark UI with deep navy surfaces, subtle purple accents, clean typography, modern cards, and restrained animation
+- Model Engine dropdown with Gemini, Groq, and OpenRouter model options
+- API key settings for Gemini, Groq, and OpenRouter
+- Auto Orchestrator plus specialized agents:
+  1. Career Agent — resume analysis and career roadmaps
+  2. Learning Agent — domain roadmaps and resources
+  3. Code Judge — code evaluation and complexity guidance
+  4. Vision Agent — image/photo problem analysis through Gemini multimodal requests
+  5. Resume Builder — ATS optimization and improvements
+  6. Interview Prep — mock questions and STAR answers
+  7. Project Ideas — innovative ideas with tech stack suggestions
+  8. Study Planner — personalized schedules
+  9. Skill Gap Analyzer — skills vs industry requirements
   10. Competitive Exam — NDA, UPSC, SSC, Merchant Navy roadmaps
-  11. Progress Tracker — History and improvement insights
-- Image upload support (multimodal via Vision Agent)
-- SSE streaming chat responses
-- History sidebar with past conversations
-- Bottom caption crediting the builder
-
-## Routes
-
-- `GET/POST /api/orchestrate/chat` — SSE streaming orchestrator
-- `GET /api/orchestrate/history` — Chat history
-- `DELETE /api/orchestrate/history` — Clear history
-- Standard Gemini conversation CRUD endpoints
+  11. Progress Tracker — history and improvement insights
+- Multimodal image upload with Gemini inline image payload support
+- History sidebar with persisted conversations and delete support
+- Settings dialog for API key management
+- Clean responsive sidebar and mobile-friendly layout
 
 ## Key Commands
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `pnpm --filter @workspace/orchestrate-ai run dev` — run the frontend locally
+- `pnpm --filter @workspace/orchestrate-ai run build` — build the frontend artifact
+- `pnpm --filter @workspace/orchestrate-ai run typecheck` — typecheck the frontend artifact
+
+## Notes
+
+- API keys are stored locally in the browser for demo use.
+- Image analysis requires selecting a Gemini model and adding a Gemini API key.
+- Groq and OpenRouter model options are text-only in the current browser-side implementation.
