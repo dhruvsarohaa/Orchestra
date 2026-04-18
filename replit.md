@@ -17,7 +17,7 @@ OrchestrateAI is a polished multi-agent AI orchestrator web app for college stud
 
 ## Current Architecture
 
-The current app is a frontend-only React artifact served at `/`. User auth, API keys, model selection, agent selection, chat history, and conversation state are stored in localStorage. AI requests are sent directly from the browser using API keys entered by the user in the app settings.
+The current app is a frontend-only React artifact served at `/`. User auth, API keys, model selection, agent selection, chat history, conversation state, and memory are stored in localStorage. AI requests are sent directly from the browser using API keys entered by the user in the app settings.
 
 ## Features
 
@@ -37,6 +37,10 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
   9. Skill Gap Analyzer — skills vs industry requirements
   10. Competitive Exam — NDA, UPSC, SSC, Merchant Navy roadmaps
   11. Progress Tracker — history and improvement insights
+- Local memory layer using `orchestrate_memory_{agentName}` keys with up to 30 remembered messages per agent
+- Global user summary stored in `orchestrate_memory_global` and injected into every agent prompt
+- Memory panel with total/per-agent counts, export, import, and clear-all confirmation
+- Memory indicators on agent selections/cards
 - Multimodal image upload with Gemini inline image payload support
 - History sidebar with persisted conversations and delete support
 - Settings dialog for API key management
@@ -53,3 +57,4 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
 - API keys are stored locally in the browser for demo use.
 - Image analysis requires selecting a Gemini model and adding a Gemini API key.
 - Groq and OpenRouter model options are text-only in the current browser-side implementation.
+- Memory is localStorage-only and persists across browser sessions on the same device/browser.

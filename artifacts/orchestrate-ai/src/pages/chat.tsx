@@ -10,7 +10,7 @@ import {
   Send, Image as ImageIcon, Briefcase, BookOpen, Code, 
   Eye, FileText, UserCircle, Lightbulb, Calendar, 
   Target, GraduationCap, TrendingUp, Sparkles, Trash2,
-  Menu, X
+  Menu, X, Brain, Download, Upload
 } from 'lucide-react';
 import { 
   DropdownMenu,
@@ -28,6 +28,25 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const AGENTS = [
   { id: 'Auto Orchestrator', icon: Sparkles, desc: 'Automatically routes to the best agent' },
@@ -53,6 +72,80 @@ const MODELS = [
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet (OpenRouter)', provider: 'openrouter' },
 ];
 
+type MemoryEntry = {
+  role: 'user' | 'assistant';
+  message: string;
+  agent: string;
+  timestamp: number;
+};
+
+const GLOBAL_MEMORY_KEY = 'orchestrate_memory_global';
+
+const getMemoryKey = (agentName: string) => `orchestrate_memory_${agentName}`;
+
+const readAgentMemory = (agentName: string): MemoryEntry[] => {
+  try {
+    const raw = localStorage.getItem(getMemoryKey(agentName));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeAgentMemory = (agentName: string, entries: MemoryEntry[]) => {
+  localStorage.setItem(getMemoryKey(agentName), JSON.stringify(entries.slice(-30)));
+};
+
+const readGlobalSummary = () => localStorage.getItem(GLOBAL_MEMORY_KEY) || '';
+
+const updateGlobalSummary = (message: string) => {
+  const cleaned = message.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return;
+  const lower = cleaned.toLowerCase();
+  const looksUseful =
+    lower.includes('my name is') ||
+    lower.includes('i am ') ||
+    lower.includes("i'm ") ||
+    lower.includes('i want') ||
+    lower.includes('my goal') ||
+    lower.includes('goal is') ||
+    lower.includes('skills') ||
+    lower.includes('learning') ||
+    lower.includes('career') ||
+    lower.includes('project');
+  if (!looksUseful) return;
+  const existing = readGlobalSummary();
+  const fact = cleaned.length > 140 ? `${cleaned.slice(0, 137)}...` : cleaned;
+  const parts = existing ? existing.split(' | ').filter(Boolean) : [];
+  if (!parts.some(part => part.toLowerCase() === fact.toLowerCase())) {
+    parts.push(fact);
+  }
+  localStorage.setItem(GLOBAL_MEMORY_KEY, parts.slice(-6).join(' | ').slice(0, 500));
+};
+
+const saveAgentMemory = (agentName: string, role: 'user' | 'assistant', message: string) => {
+  const entry: MemoryEntry = { role, message, agent: agentName, timestamp: Date.now() };
+  writeAgentMemory(agentName, [...readAgentMemory(agentName), entry]);
+  if (role === 'user') {
+    updateGlobalSummary(message);
+  }
+};
+
+const buildPromptWithMemory = (agentName: string, currentMessage: string, basePrompt: string) => {
+  const previous = readAgentMemory(agentName)
+    .slice(-10)
+    .map(entry => `${entry.role}: ${entry.message}`)
+    .join('\n');
+  const globalSummary = readGlobalSummary();
+  const memorySections = [
+    globalSummary ? `User summary:\n${globalSummary}` : '',
+    previous ? `Previous conversation:\n${previous}` : '',
+    `Current message: ${currentMessage}`,
+  ].filter(Boolean).join('\n\n');
+  return `${memorySections}\n\n${basePrompt}`;
+};
+
 export default function Chat() {
   const { 
     conversations, currentConversationId, createConversation, setCurrentConversation,
@@ -66,10 +159,18 @@ export default function Chat() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [memoryVersion, setMemoryVersion] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importMemoryRef = useRef<HTMLInputElement>(null);
 
   const currentConversation = conversations.find(c => c.id === currentConversationId);
+  const memoryCounts = AGENTS.reduce<Record<string, number>>((acc, agent) => {
+    acc[agent.id] = readAgentMemory(agent.id).length;
+    return acc;
+  }, {});
+  const totalMemoryMessages = Object.values(memoryCounts).reduce((sum, count) => sum + count, 0);
+  const globalSummary = readGlobalSummary();
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -137,6 +238,70 @@ export default function Chat() {
     reader.readAsDataURL(file);
   };
 
+  const refreshMemory = () => setMemoryVersion(version => version + 1);
+
+  const exportMemory = () => {
+    const payload = {
+      global: readGlobalSummary(),
+      agents: AGENTS.reduce<Record<string, MemoryEntry[]>>((acc, agent) => {
+        acc[agent.id] = readAgentMemory(agent.id);
+        return acc;
+      }, {}),
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'orchestrate_memory.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importMemory = (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || '{}'));
+        if (typeof parsed.global === 'string') {
+          localStorage.setItem(GLOBAL_MEMORY_KEY, parsed.global.slice(0, 500));
+        }
+        if (parsed.agents && typeof parsed.agents === 'object') {
+          Object.entries(parsed.agents).forEach(([agentName, entries]) => {
+            if (Array.isArray(entries)) {
+              const safeEntries = entries
+                .filter(entry => entry && (entry.role === 'user' || entry.role === 'assistant') && typeof entry.message === 'string')
+                .map(entry => ({
+                  role: entry.role,
+                  message: entry.message,
+                  agent: typeof entry.agent === 'string' ? entry.agent : agentName,
+                  timestamp: typeof entry.timestamp === 'number' ? entry.timestamp : Date.now(),
+                }));
+              writeAgentMemory(agentName, safeEntries);
+            }
+          });
+        }
+        refreshMemory();
+      } catch {
+        window.alert('Could not import memory. Please choose a valid orchestrate_memory.json file.');
+      } finally {
+        if (importMemoryRef.current) {
+          importMemoryRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const clearAllMemory = () => {
+    AGENTS.forEach(agent => localStorage.removeItem(getMemoryKey(agent.id)));
+    localStorage.removeItem(GLOBAL_MEMORY_KEY);
+    refreshMemory();
+  };
+
   const handleSend = async () => {
     if ((!input.trim() && !imageAttachment) || isTyping) return;
 
@@ -149,14 +314,18 @@ export default function Chat() {
     setInput('');
     const imageForRequest = imageAttachment;
     setImageAttachment(null);
-    addMessage(convId, { role: 'user', content: imageForRequest ? `${userMsg || 'Analyze this image'}\n\nAttached image: ${imageForRequest.name}` : userMsg });
+    const userMemoryMessage = imageForRequest ? `${userMsg || 'Analyze this image'}\n\nAttached image: ${imageForRequest.name}` : userMsg;
+    addMessage(convId, { role: 'user', content: userMemoryMessage });
+    saveAgentMemory(selectedAgent, 'user', userMemoryMessage);
+    refreshMemory();
     setIsTyping(true);
 
     try {
       const modelInfo = MODELS.find(m => m.id === selectedModel);
       let responseText = "";
 
-      const systemPrompt = `You are acting as the ${selectedAgent} within OrchestrateAI. Provide a helpful, precise, and professional response to the user's query.${imageForRequest ? '\nIf an image is attached, analyze it carefully and include relevant visual observations.' : ''}\n\nUser: ${userMsg || 'Analyze the attached image.'}`;
+      const basePrompt = `You are acting as the ${selectedAgent} within OrchestrateAI. Provide a helpful, precise, and professional response to the user's query.${imageForRequest ? '\nIf an image is attached, analyze it carefully and include relevant visual observations.' : ''}\n\nUser: ${userMsg || 'Analyze the attached image.'}`;
+      const systemPrompt = buildPromptWithMemory(selectedAgent, userMsg || 'Analyze the attached image.', basePrompt);
 
       if (modelInfo?.provider === 'google') {
         if (!apiKeyGemini) {
@@ -185,8 +354,11 @@ export default function Chat() {
       }
 
       addMessage(convId!, { role: 'assistant', content: responseText, agent: selectedAgent });
+      saveAgentMemory(selectedAgent, 'assistant', responseText);
+      refreshMemory();
     } catch (err: any) {
-      addMessage(convId!, { role: 'assistant', content: `Error processing request: ${err.message}. Please check your API keys and try again.`, agent: 'System' });
+      const errorMessage = `Error processing request: ${err.message}. Please check your API keys and try again.`;
+      addMessage(convId!, { role: 'assistant', content: errorMessage, agent: 'System' });
     } finally {
       setIsTyping(false);
     }
@@ -302,28 +474,100 @@ export default function Chat() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm">
-                {React.createElement(AGENTS.find(a => a.id === selectedAgent)?.icon || Sparkles, { className: "w-4 h-4 text-primary" })}
-                <span className="hidden sm:inline">{selectedAgent}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 bg-card border-white/10 max-h-[400px] overflow-y-auto">
-              <DropdownMenuLabel>Select Agent</DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-white/5" />
-              {AGENTS.map(a => (
-                <DropdownMenuItem key={a.id} onClick={() => setSelectedAgent(a.id)} className="cursor-pointer flex flex-col items-start py-2">
-                  <div className="flex items-center gap-2 font-medium">
-                    <a.icon className="w-4 h-4 text-primary" />
-                    {a.id}
+
+          <div className="flex items-center gap-2">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm">
+                  <Brain className="w-4 h-4 text-primary" />
+                  <span className="hidden sm:inline">Memory</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="bg-card border-white/10 text-foreground sm:max-w-md">
+                <SheetHeader>
+                  <SheetTitle>Local Memory</SheetTitle>
+                  <SheetDescription>Stored only in this browser.</SheetDescription>
+                </SheetHeader>
+                <div className="mt-6 space-y-5">
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="text-sm text-muted-foreground">Total messages remembered</div>
+                    <div className="mt-1 text-3xl font-semibold text-white">{totalMemoryMessages}</div>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">{a.desc}</div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-white">Per-agent memory</div>
+                    <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+                      {AGENTS.map(agent => (
+                        <div key={agent.id} className="flex items-center justify-between rounded-lg border border-white/5 bg-black/10 px-3 py-2 text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`h-2 w-2 rounded-full ${memoryCounts[agent.id] ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                            <span className="truncate">{agent.id}</span>
+                          </div>
+                          <span className="text-muted-foreground">{memoryCounts[agent.id] || 0}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="text-sm font-medium text-white">Global user summary</div>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{globalSummary || 'No global facts remembered yet.'}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" className="gap-2 bg-white/5 border-white/10" onClick={exportMemory}>
+                      <Download className="w-4 h-4" />
+                      Export
+                    </Button>
+                    <Button variant="outline" className="gap-2 bg-white/5 border-white/10" onClick={() => importMemoryRef.current?.click()}>
+                      <Upload className="w-4 h-4" />
+                      Import
+                    </Button>
+                  </div>
+                  <input ref={importMemoryRef} type="file" accept="application/json,.json" className="hidden" onChange={e => importMemory(e.target.files?.[0] || null)} />
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" className="w-full border-red-500/20 bg-red-500/10 text-red-300 hover:text-red-200">
+                        Clear All Memory
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="bg-card border-white/10">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Clear all local memory?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This removes every remembered message and the global user summary from this browser.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="bg-white/5 border-white/10">Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-red-500 text-white hover:bg-red-500/90" onClick={clearAllMemory}>Clear Memory</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </SheetContent>
+            </Sheet>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm">
+                  {React.createElement(AGENTS.find(a => a.id === selectedAgent)?.icon || Sparkles, { className: "w-4 h-4 text-primary" })}
+                  <span className="hidden sm:inline">{selectedAgent}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 bg-card border-white/10 max-h-[400px] overflow-y-auto">
+                <DropdownMenuLabel>Select Agent</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-white/5" />
+                {AGENTS.map(a => (
+                  <DropdownMenuItem key={a.id} onClick={() => setSelectedAgent(a.id)} className="cursor-pointer flex flex-col items-start py-2">
+                    <div className="flex items-center gap-2 font-medium">
+                      <span className={`h-2 w-2 rounded-full ${memoryCounts[a.id] ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                      <a.icon className="w-4 h-4 text-primary" />
+                      {a.id}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">{a.desc}</div>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         {/* Chat Area */}
@@ -341,9 +585,12 @@ export default function Chat() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 w-full">
                 {AGENTS.slice(1, 7).map(agent => (
                   <button key={agent.id} onClick={() => { setSelectedAgent(agent.id); }} className="flex flex-col text-left p-4 rounded-xl border border-white/5 bg-card hover:bg-white/5 transition-all group shadow-sm">
-                    <div className="flex items-center gap-2 font-medium text-foreground group-hover:text-primary transition-colors">
-                      <agent.icon className="w-4 h-4" />
-                      {agent.id}
+                    <div className="flex items-center justify-between gap-2 font-medium text-foreground group-hover:text-primary transition-colors">
+                      <span className="flex items-center gap-2 min-w-0">
+                        <agent.icon className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{agent.id}</span>
+                      </span>
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${memoryCounts[agent.id] ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
                     </div>
                     <div className="text-xs text-muted-foreground mt-2 line-clamp-2">{agent.desc}</div>
                   </button>
