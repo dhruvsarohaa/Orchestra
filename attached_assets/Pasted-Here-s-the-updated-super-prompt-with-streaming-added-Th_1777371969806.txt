@@ -1,0 +1,61 @@
+Here's the updated super prompt with streaming added:
+
+
+This is an existing OrchestraAI app. Do NOT rebuild from scratch. Only improve and fix what exists. Here are all the changes needed:
+1. FIX MEMORY SYSTEM (most critical):
+The memory is showing 0 for everything and not storing anything. Fix the memory layer completely:
+
+Memory should actually save and persist between conversations using localStorage
+Instead of storing full conversations, extract only key facts and context from each message (name, goals, preferences, important decisions made)
+Show a proper memory card for each agent with actual remembered facts displayed as tags or chips, not just a number
+Add a "Global User Profile" that builds up over time — things like user's name, what they're studying, their goals
+Memory panel should look like a profile card with sections: "Who you are", "Your goals", "Recent context" — not just boring numbers
+When memory is empty show a helpful empty state with an icon and text like "Start chatting and I'll remember important things about you"
+
+2. ADD STREAMING RESPONSE:
+
+Implement token-by-token streaming for ALL AI responses across every agent
+Text should appear word by word exactly like ChatGPT or Claude
+Show a blinking cursor at the end of the streaming text while it is still generating
+Show the typing indicator (3 bouncing dots) first for 1-2 seconds, then transition smoothly into streaming text
+If streaming fails or API doesn't support it, fall back gracefully to normal response — never show an error to the user
+Streaming should work for all model providers — Gemini, Groq, OpenRouter, Anthropic, Together AI
+The send button should change to a "Stop" button while streaming so user can cancel mid-response
+After streaming completes, save the full response to memory and conversation history
+
+3. ADD MORE AI MODEL OPTIONS:
+Currently only Gemini, Groq and OpenRouter keys are supported. Add these additional options in Settings:
+
+Anthropic API Key (for Claude models) — add Claude 3.5 Sonnet and Claude 3 Haiku as model options
+Together AI API Key
+Add these to the model selector dropdown alongside existing ones
+Each model option should show a small colored badge showing which provider it uses
+
+4. COMPLETE UI REDESIGN — make it feel premium:
+
+Agent cards: replace boring grey dots with colored status indicators — green pulsing dot when active, gradient background on each card matching its purpose (career = blue, code = green, vision = purple etc)
+Add a subtle animated gradient background to the main hero section — slowly shifting colors, not distracting
+Memory panel: glassmorphism card design with blur effect, not flat dark boxes
+Model selector: show provider logo/icon next to each model name
+Sidebar: add subtle hover animations on each item, active item should have a glowing left border
+All buttons: gradient backgrounds with hover glow effect
+Chat messages: add smooth fade-in animation as each message appears
+Add a typing indicator with 3 animated bouncing dots while AI is generating
+Input box: glowing border animation when focused
+Agent cards on homepage: on hover, card should lift up slightly with a shadow and show a "Launch" button
+
+5. SETTINGS PAGE IMPROVEMENTS:
+
+Group API keys by provider with a small icon for each
+Show a green checkmark next to keys that are saved and working
+Add a "Test Connection" button next to each API key to verify it works
+Add a Theme toggle (Dark/Light/System) in settings
+
+6. OVERALL FEEL:
+
+Add micro animations everywhere — nothing big, just subtle 200-300ms transitions
+Every clickable element should have a hover effect
+Page should feel alive, not static
+Keep the dark theme as default but make it feel premium like Linear or Vercel dashboard
+
+Do all of this without breaking existing functionality. Test after each major change. Start with the memory fix first, then streaming, then UI changes.

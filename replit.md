@@ -13,7 +13,7 @@ OrchestrateAI is a polished multi-agent AI orchestrator web app for college stud
 - **Frontend**: React + Vite (`artifacts/orchestrate-ai`)
 - **UI**: Tailwind CSS, Radix UI primitives, lucide-react, wouter
 - **State**: React Context + localStorage
-- **AI providers**: Browser-side user API keys for Gemini, Groq, and OpenRouter-compatible models
+- **AI providers**: Browser-side user API keys for Google Gemini, Groq, Anthropic Claude, OpenRouter, and Together AI
 
 ## Current Architecture
 
@@ -22,9 +22,9 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
 ## Features
 
 - Password login with access code `dhruv111`
-- Premium modern dark UI with deep navy surfaces, subtle purple accents, clean typography, modern cards, and restrained animation
-- Model Engine dropdown with Gemini, Groq, and OpenRouter model options
-- API key settings for Gemini, Groq, and OpenRouter
+- Premium modern UI with dark/light/system theme toggle, deep navy surfaces, gradient agent cards, animated hero gradient, glassmorphism memory panel, glowing input field, sidebar inset glow on active item, "Launch" hover affordance on cards, and rich micro-animations throughout
+- Model Engine dropdown grouped by provider (Google, Groq, Anthropic, OpenRouter, Together) with provider color dots and badges; 11 selectable models including Gemini 1.5/2.0, Llama 3.3, Claude 3.5 Sonnet/Haiku, GPT-4o Mini, Mixtral 8x7B
+- Settings dialog grouped by provider with API key inputs, saved-state checkmarks, per-provider Test Connection, and theme picker
 - Auto Orchestrator plus specialized agents:
   1. Career Agent — resume analysis and career roadmaps
   2. Learning Agent — domain roadmaps and resources
@@ -37,14 +37,15 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
   9. Skill Gap Analyzer — skills vs industry requirements
   10. Competitive Exam — NDA, UPSC, SSC, Merchant Navy roadmaps
   11. Progress Tracker — history and improvement insights
-- Smart memory layer with sliding context window: keeps the last 8 active messages per agent (`orchestrate_memory_{agentName}`) and auto-compresses older messages into a 2-3 sentence rolling summary stored in `orchestrate_summary_{agentName}` (created via the active model with a heuristic fallback). Saves tokens and speeds up responses.
-- Global user summary stored in `orchestrate_memory_global` and injected into every agent prompt
-- Memory panel with total/per-agent counts, export, import, and clear-all confirmation
-- Memory indicators on agent selections/cards
+- Structured memory system (`src/lib/memory.ts`) with three categories — **identity** (who you are), **goals** (what you want), and **context** (what you're working on) — extracted from each user message via regex heuristics plus an AI fact-extraction pass that returns JSON. Stored at `orchestrate_profile_v2`.
+- Sliding per-agent recent buffer (last ~8 messages) at `orchestrate_recent_{agent}` plus rolling 2–3 sentence summary at `orchestrate_summary_{agent}` (auto-summarizes older turns once the buffer exceeds the threshold).
+- Memory panel rendered as a glassmorphism sheet with chip-based UI ("Who you are / Your goals / Recent context"), per-agent activity grid, export/import JSON, and clear-all confirmation. Empty-state with animated brain icon when nothing is remembered.
+- Token-by-token streaming for **all five providers** via SSE (`src/lib/streaming.ts`) with blinking cursor while text arrives, a red Stop button that cancels the in-flight request, and graceful non-streaming fallback if the SSE call fails.
 - Multimodal image upload with Gemini inline image payload support
-- History sidebar with persisted conversations and delete support
-- Settings dialog for API key management
-- Clean responsive sidebar and mobile-friendly layout
+- History sidebar with persisted conversations, delete support, and a glowing inset-shadow indicator on the active item
+- Animated welcome hero (gradient drift) with shimmer-text headline and gradient-tinted agent quick-launch cards (each with hover "Launch" pill)
+- Glowing input field while focused; gradient send button with hover lift
+- Clean responsive sidebar with mobile sheet, smooth open/close animations, and mobile-friendly layout
 
 ## Key Commands
 
@@ -56,5 +57,7 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
 
 - API keys are stored locally in the browser for demo use.
 - Image analysis requires selecting a Gemini model and adding a Gemini API key.
-- Groq and OpenRouter model options are text-only in the current browser-side implementation.
+- Groq, Anthropic, OpenRouter, and Together model options are text-only in the current browser-side implementation.
+- Anthropic browser calls use the `anthropic-dangerous-direct-browser-access: true` header — fine for a single-user demo, not appropriate for production.
 - Memory is localStorage-only and persists across browser sessions on the same device/browser.
+- Theme keys: `dark`, `light`, and `system` (which follows `prefers-color-scheme`).
