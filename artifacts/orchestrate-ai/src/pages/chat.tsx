@@ -80,8 +80,12 @@ type MemoryEntry = {
 };
 
 const GLOBAL_MEMORY_KEY = 'orchestrate_memory_global';
+const ACTIVE_WINDOW = 8;
+const SUMMARIZE_TRIGGER = 12;
+const KEEP_AFTER_SUMMARY = 6;
 
 const getMemoryKey = (agentName: string) => `orchestrate_memory_${agentName}`;
+const getSummaryKey = (agentName: string) => `orchestrate_summary_${agentName}`;
 
 const readAgentMemory = (agentName: string): MemoryEntry[] => {
   try {
@@ -96,6 +100,14 @@ const readAgentMemory = (agentName: string): MemoryEntry[] => {
 const writeAgentMemory = (agentName: string, entries: MemoryEntry[]) => {
   localStorage.setItem(getMemoryKey(agentName), JSON.stringify(entries.slice(-30)));
 };
+
+const readAgentSummary = (agentName: string) => localStorage.getItem(getSummaryKey(agentName)) || '';
+const writeAgentSummary = (agentName: string, summary: string) => {
+  if (summary.trim()) {
+    localStorage.setItem(getSummaryKey(agentName), summary.trim().slice(0, 600));
+  }
+};
+const clearAgentSummary = (agentName: string) => localStorage.removeItem(getSummaryKey(agentName));
 
 const readGlobalSummary = () => localStorage.getItem(GLOBAL_MEMORY_KEY) || '';
 
@@ -132,15 +144,28 @@ const saveAgentMemory = (agentName: string, role: 'user' | 'assistant', message:
   }
 };
 
+const heuristicSummarize = (entries: MemoryEntry[], existingSummary: string): string => {
+  if (!entries.length) return existingSummary;
+  const userMsgs = entries.filter(e => e.role === 'user').map(e => e.message.replace(/\s+/g, ' ').trim());
+  const assistantMsgs = entries.filter(e => e.role === 'assistant').map(e => e.message.replace(/\s+/g, ' ').trim());
+  const topics = userMsgs.slice(0, 3).map(m => m.length > 80 ? m.slice(0, 77) + '...' : m).join('; ');
+  const replies = assistantMsgs.length;
+  const seed = existingSummary ? `${existingSummary} ` : '';
+  return `${seed}Earlier the user discussed: ${topics || 'various topics'}. The assistant gave ${replies} response${replies === 1 ? '' : 's'} covering related guidance. (${entries.length} prior messages compressed.)`.slice(0, 600);
+};
+
 const buildPromptWithMemory = (agentName: string, currentMessage: string, basePrompt: string) => {
-  const previous = readAgentMemory(agentName)
-    .slice(-10)
+  const memory = readAgentMemory(agentName);
+  const recent = memory.slice(-ACTIVE_WINDOW);
+  const previous = recent
     .map(entry => `${entry.role}: ${entry.message}`)
     .join('\n');
+  const agentSummary = readAgentSummary(agentName);
   const globalSummary = readGlobalSummary();
   const memorySections = [
-    globalSummary ? `User summary:\n${globalSummary}` : '',
-    previous ? `Previous conversation:\n${previous}` : '',
+    globalSummary ? `User profile (long-term facts):\n${globalSummary}` : '',
+    agentSummary ? `Conversation memory summary (older context):\n${agentSummary}` : '',
+    previous ? `Recent conversation (last ${recent.length} messages):\n${previous}` : '',
     `Current message: ${currentMessage}`,
   ].filter(Boolean).join('\n\n');
   return `${memorySections}\n\n${basePrompt}`;
@@ -171,12 +196,48 @@ export default function Chat() {
   }, {});
   const totalMemoryMessages = Object.values(memoryCounts).reduce((sum, count) => sum + count, 0);
   const globalSummary = readGlobalSummary();
+  const currentAgentSummary = readAgentSummary(selectedAgent);
+  void memoryVersion;
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [currentConversation?.messages, isTyping]);
+
+  const summarizeOldMemory = async (agentName: string) => {
+    const memory = readAgentMemory(agentName);
+    if (memory.length < SUMMARIZE_TRIGGER) return;
+
+    const toSummarize = memory.slice(0, memory.length - KEEP_AFTER_SUMMARY);
+    const keep = memory.slice(memory.length - KEEP_AFTER_SUMMARY);
+    const existingSummary = readAgentSummary(agentName);
+
+    const transcript = toSummarize.map(e => `${e.role}: ${e.message}`).join('\n').slice(0, 4000);
+    const summarizationPrompt = `${existingSummary ? `Existing memory summary:\n${existingSummary}\n\n` : ''}Compress the following older conversation into a concise memory summary of 2-3 sentences MAX. Capture the user's goals, key facts, and what was discussed. Plain text only, no markdown.\n\nConversation:\n${transcript}`;
+
+    let newSummary = '';
+    try {
+      const modelInfo = MODELS.find(m => m.id === selectedModel);
+      if (modelInfo?.provider === 'google' && apiKeyGemini) {
+        newSummary = await callGemini(summarizationPrompt, apiKeyGemini, modelInfo.id);
+      } else if (modelInfo?.provider === 'groq' && apiKeyGroq) {
+        newSummary = await callGroq(summarizationPrompt, apiKeyGroq, modelInfo.id);
+      } else if (modelInfo?.provider === 'openrouter' && apiKeyOpenRouter) {
+        newSummary = await callOpenRouter(summarizationPrompt, apiKeyOpenRouter, modelInfo.id);
+      }
+    } catch {
+      newSummary = '';
+    }
+
+    if (!newSummary || newSummary.length < 10) {
+      newSummary = heuristicSummarize(toSummarize, existingSummary);
+    }
+
+    writeAgentSummary(agentName, newSummary);
+    writeAgentMemory(agentName, keep);
+    refreshMemory();
+  };
 
   const callGemini = async (prompt: string, key: string, modelId: string, image?: { mimeType: string; data: string } | null) => {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`, {
@@ -297,7 +358,10 @@ export default function Chat() {
   };
 
   const clearAllMemory = () => {
-    AGENTS.forEach(agent => localStorage.removeItem(getMemoryKey(agent.id)));
+    AGENTS.forEach(agent => {
+      localStorage.removeItem(getMemoryKey(agent.id));
+      clearAgentSummary(agent.id);
+    });
     localStorage.removeItem(GLOBAL_MEMORY_KEY);
     refreshMemory();
   };
@@ -356,6 +420,10 @@ export default function Chat() {
       addMessage(convId!, { role: 'assistant', content: responseText, agent: selectedAgent });
       saveAgentMemory(selectedAgent, 'assistant', responseText);
       refreshMemory();
+
+      if (readAgentMemory(selectedAgent).length >= SUMMARIZE_TRIGGER) {
+        summarizeOldMemory(selectedAgent).catch(() => {});
+      }
     } catch (err: any) {
       const errorMessage = `Error processing request: ${err.message}. Please check your API keys and try again.`;
       addMessage(convId!, { role: 'assistant', content: errorMessage, agent: 'System' });
@@ -379,21 +447,26 @@ export default function Chat() {
       </div>
       
       <div className="px-3 pb-3">
-        <Button onClick={() => { setCurrentConversation(createConversation()); setIsSidebarOpen(false); }} className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 text-white border-0" variant="outline">
-          <Plus className="w-4 h-4" />
+        <Button onClick={() => { setCurrentConversation(createConversation()); setIsSidebarOpen(false); }} className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 text-white border-0 transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-md hover:shadow-primary/20" variant="outline">
+          <Plus className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90" />
           New Chat
         </Button>
       </div>
 
       <ScrollArea className="flex-1 px-3">
         <div className="space-y-1">
-          {conversations.map(conv => (
-            <div key={conv.id} className={`group flex items-center justify-between px-3 py-2 text-sm rounded-md cursor-pointer transition-colors ${currentConversationId === conv.id ? 'bg-primary/20 text-primary-foreground' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`} onClick={() => { setCurrentConversation(conv.id); setIsSidebarOpen(false); }}>
+          {conversations.map((conv, i) => (
+            <div
+              key={conv.id}
+              style={{ animationDelay: `${Math.min(i, 8) * 40}ms`, animationFillMode: 'both' }}
+              className={`group flex items-center justify-between px-3 py-2 text-sm rounded-md cursor-pointer transition-all duration-300 ease-out animate-in fade-in slide-in-from-left-2 hover:translate-x-0.5 ${currentConversationId === conv.id ? 'bg-primary/20 text-primary-foreground shadow-sm shadow-primary/20' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+              onClick={() => { setCurrentConversation(conv.id); setIsSidebarOpen(false); }}
+            >
               <div className="flex items-center gap-2 truncate">
                 <MessageSquare className="w-4 h-4 shrink-0" />
                 <span className="truncate">{conv.title}</span>
               </div>
-              <Trash2 className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity" onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }} />
+              <Trash2 className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all duration-300 hover:scale-110" onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }} />
             </div>
           ))}
         </div>
@@ -478,7 +551,7 @@ export default function Chat() {
           <div className="flex items-center gap-2">
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm">
+                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm transition-all duration-300 ease-out hover:scale-105 hover:bg-white/10 hover:border-primary/30 hover:shadow-md hover:shadow-primary/20">
                   <Brain className="w-4 h-4 text-primary" />
                   <span className="hidden sm:inline">Memory</span>
                 </Button>
@@ -510,6 +583,10 @@ export default function Chat() {
                   <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
                     <div className="text-sm font-medium text-white">Global user summary</div>
                     <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{globalSummary || 'No global facts remembered yet.'}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="text-sm font-medium text-white">{selectedAgent} memory summary</div>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{currentAgentSummary || 'Older messages will be auto-summarized here as the conversation grows.'}</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" className="gap-2 bg-white/5 border-white/10" onClick={exportMemory}>
@@ -547,7 +624,7 @@ export default function Chat() {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm">
+                <Button variant="outline" className="gap-2 bg-white/5 border-white/10 text-sm transition-all duration-300 ease-out hover:scale-105 hover:bg-white/10 hover:border-primary/30 hover:shadow-md hover:shadow-primary/20">
                   {React.createElement(AGENTS.find(a => a.id === selectedAgent)?.icon || Sparkles, { className: "w-4 h-4 text-primary" })}
                   <span className="hidden sm:inline">{selectedAgent}</span>
                 </Button>
@@ -573,9 +650,9 @@ export default function Chat() {
         {/* Chat Area */}
         <div className="flex-1 overflow-y-auto p-4 z-10 scroll-smooth" ref={scrollRef}>
           {!currentConversation?.messages.length ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-3xl mx-auto space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-10">
-              <div className="space-y-4 mt-8">
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6 ring-1 ring-primary/20">
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-3xl mx-auto space-y-10 pb-10">
+              <div className="space-y-4 mt-8 animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out">
+                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6 ring-1 ring-primary/20 transition-all duration-300 hover:ring-primary/40 hover:shadow-lg hover:shadow-primary/20">
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
                 <h2 className="text-4xl font-semibold tracking-tight text-white">How can I help you today?</h2>
@@ -583,14 +660,19 @@ export default function Chat() {
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 w-full">
-                {AGENTS.slice(1, 7).map(agent => (
-                  <button key={agent.id} onClick={() => { setSelectedAgent(agent.id); }} className="flex flex-col text-left p-4 rounded-xl border border-white/5 bg-card hover:bg-white/5 transition-all group shadow-sm">
-                    <div className="flex items-center justify-between gap-2 font-medium text-foreground group-hover:text-primary transition-colors">
+                {AGENTS.slice(1, 7).map((agent, i) => (
+                  <button
+                    key={agent.id}
+                    onClick={() => { setSelectedAgent(agent.id); }}
+                    style={{ animationDelay: `${150 + i * 80}ms`, animationFillMode: 'both' }}
+                    className="flex flex-col text-left p-4 rounded-xl border border-white/5 bg-card hover:bg-white/5 transition-all duration-300 ease-out group shadow-sm hover:scale-[1.02] hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10 animate-in fade-in slide-in-from-bottom-4"
+                  >
+                    <div className="flex items-center justify-between gap-2 font-medium text-foreground group-hover:text-primary transition-colors duration-300">
                       <span className="flex items-center gap-2 min-w-0">
-                        <agent.icon className="w-4 h-4 shrink-0" />
+                        <agent.icon className="w-4 h-4 shrink-0 transition-transform duration-300 group-hover:scale-110" />
                         <span className="truncate">{agent.id}</span>
                       </span>
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${memoryCounts[agent.id] ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+                      <span className={`h-2 w-2 shrink-0 rounded-full transition-all duration-300 ${memoryCounts[agent.id] ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-zinc-600'}`} />
                     </div>
                     <div className="text-xs text-muted-foreground mt-2 line-clamp-2">{agent.desc}</div>
                   </button>
@@ -598,10 +680,10 @@ export default function Chat() {
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-6 pb-6">
+            <div className="max-w-3xl mx-auto space-y-6 pb-6 animate-in fade-in duration-300">
               {currentConversation.messages.map(msg => (
-                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-primary text-primary-foreground ml-auto rounded-tr-sm' : 'bg-card border border-white/5 text-foreground mr-auto rounded-tl-sm'}`}>
+                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out`}>
+                  <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-5 py-4 text-sm leading-relaxed shadow-sm transition-all duration-300 ${msg.role === 'user' ? 'bg-primary text-primary-foreground ml-auto rounded-tr-sm hover:shadow-primary/20 hover:shadow-md' : 'bg-card border border-white/5 text-foreground mr-auto rounded-tl-sm hover:border-white/10'}`}>
                     {msg.role === 'assistant' && msg.agent && (
                       <div className="flex items-center gap-1.5 text-[11px] font-medium text-primary mb-2 uppercase tracking-wider">
                         <Sparkles className="w-3.5 h-3.5" />
@@ -613,11 +695,14 @@ export default function Chat() {
                 </div>
               ))}
               {isTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-card border border-white/5 text-foreground px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out">
+                  <div className="bg-card border border-white/5 text-foreground px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-1.5 shadow-sm">
+                    <span className="text-[11px] font-medium text-primary uppercase tracking-wider mr-1.5 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> {selectedAgent} is thinking
+                    </span>
+                    <div className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               )}
@@ -657,7 +742,7 @@ export default function Chat() {
                 rows={1}
               />
               <div className="p-2 pb-2.5">
-                <Button size="icon" className={`h-8 w-8 shrink-0 rounded-lg transition-colors ${input.trim() || imageAttachment ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-white/5 text-muted-foreground hover:bg-white/10'}`} onClick={handleSend} disabled={(!input.trim() && !imageAttachment) || isTyping}>
+                <Button size="icon" className={`h-8 w-8 shrink-0 rounded-lg transition-all duration-300 ease-out ${input.trim() || imageAttachment ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-110 hover:shadow-md hover:shadow-primary/40' : 'bg-white/5 text-muted-foreground hover:bg-white/10'}`} onClick={handleSend} disabled={(!input.trim() && !imageAttachment) || isTyping}>
                   <Send className="w-4 h-4" />
                 </Button>
               </div>

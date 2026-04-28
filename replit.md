@@ -37,7 +37,7 @@ The current app is a frontend-only React artifact served at `/`. User auth, API 
   9. Skill Gap Analyzer — skills vs industry requirements
   10. Competitive Exam — NDA, UPSC, SSC, Merchant Navy roadmaps
   11. Progress Tracker — history and improvement insights
-- Local memory layer using `orchestrate_memory_{agentName}` keys with up to 30 remembered messages per agent
+- Smart memory layer with sliding context window: keeps the last 8 active messages per agent (`orchestrate_memory_{agentName}`) and auto-compresses older messages into a 2-3 sentence rolling summary stored in `orchestrate_summary_{agentName}` (created via the active model with a heuristic fallback). Saves tokens and speeds up responses.
 - Global user summary stored in `orchestrate_memory_global` and injected into every agent prompt
 - Memory panel with total/per-agent counts, export, import, and clear-all confirmation
 - Memory indicators on agent selections/cards
