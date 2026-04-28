@@ -17,7 +17,9 @@ OrchestrateAI is a polished multi-agent AI orchestrator web app for college stud
 
 ## Current Architecture
 
-The current app is a frontend-only React artifact served at `/`. User auth, API keys, model selection, agent selection, chat history, conversation state, and memory are stored in localStorage. AI requests are sent directly from the browser using API keys entered by the user in the app settings.
+The app is served at `/` by a small Express server (`artifacts/orchestrate-ai/server/index.ts`) that mounts Vite as middleware in development and serves the built `dist/public` in production. User auth, API keys, model selection, agent selection, chat history, conversation state, and memory are stored in localStorage.
+
+AI requests are sent directly from the browser for Groq, Anthropic, OpenRouter, and Together (their CORS allows browser calls). **Google Gemini calls are proxied through the Express server** at `POST /api/gemini/stream` (SSE) and `POST /api/gemini/generate` (JSON), because Google's Generative Language API blocks direct browser requests with 404. The user's Gemini key is sent from the browser to the local proxy via the `x-gemini-key` header and the server forwards it to Google. The Express server runs on the artifact's `PORT` env var; both `pnpm run dev` and `pnpm run serve` (production) are powered by `tsx server/index.ts`.
 
 ## Features
 

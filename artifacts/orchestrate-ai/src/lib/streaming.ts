@@ -39,13 +39,11 @@ async function readSseLines(
 }
 
 export async function streamGemini({ prompt, modelId, apiKey, image, signal, onDelta }: StreamArgs) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse&key=${apiKey}`;
-  const parts: any[] = [{ text: prompt }];
-  if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+  const url = `${import.meta.env.BASE_URL}api/gemini/stream`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts }] }),
+    headers: { 'Content-Type': 'application/json', 'x-gemini-key': apiKey },
+    body: JSON.stringify({ modelId, prompt, image: image ?? null }),
     signal,
   });
   await readSseLines(res, signal, line => {
@@ -178,16 +176,18 @@ export async function nonStreamingFallback(
 ): Promise<string> {
   const { prompt, modelId, apiKey, image, signal } = args;
   if (provider === 'google') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
-    const parts: any[] = [{ text: prompt }];
-    if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+    const url = `${import.meta.env.BASE_URL}api/gemini/generate`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts }] }),
+      headers: { 'Content-Type': 'application/json', 'x-gemini-key': apiKey },
+      body: JSON.stringify({ modelId, prompt, image: image ?? null }),
       signal,
     });
-    if (!res.ok) throw new Error(`Gemini ${res.status}`);
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch {}
+      throw new Error(`Gemini ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
+    }
     const data = await res.json();
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   }

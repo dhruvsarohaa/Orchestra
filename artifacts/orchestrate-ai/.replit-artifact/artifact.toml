@@ -19,12 +19,7 @@ run = "pnpm --filter @workspace/orchestrate-ai run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/orchestrate-ai", "run", "build" ]
-publicDir = "artifacts/orchestrate-ai/dist/public"
-serve = "static"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+run = [ "pnpm", "--filter", "@workspace/orchestrate-ai", "run", "serve" ]
 
 [services.env]
 PORT = "18804"
