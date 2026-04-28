@@ -74,7 +74,7 @@ type ModelDef = {
 };
 
 const MODELS: ModelDef[] = [
-  { id: 'gemini-1.5-flash',                  name: 'Gemini 1.5 Flash',         provider: 'google' },
+  { id: 'gemini-1.5-flash-latest',           name: 'Gemini 1.5 Flash',         provider: 'google' },
   { id: 'gemini-1.5-pro',                    name: 'Gemini 1.5 Pro',           provider: 'google' },
   { id: 'gemini-2.0-flash',                  name: 'Gemini 2.0 Flash',         provider: 'google' },
   { id: 'llama-3.3-70b-versatile',           name: 'Llama 3.3 70B',            provider: 'groq' },

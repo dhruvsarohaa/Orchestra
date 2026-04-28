@@ -61,7 +61,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       apiKeyTogether: '',
       conversations: [],
       currentConversationId: null,
-      selectedModel: 'gemini-1.5-flash',
+      selectedModel: 'gemini-1.5-flash-latest',
       selectedAgent: 'Auto Orchestrator',
       theme: 'dark',
     };
