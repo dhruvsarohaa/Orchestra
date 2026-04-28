@@ -8,7 +8,7 @@ import {
   MessageSquare, Plus, Settings, LogOut, ChevronDown,
   Send, Image as ImageIcon, Briefcase, BookOpen, Code,
   Eye, FileText, UserCircle, Lightbulb, Calendar,
-  Target, GraduationCap, TrendingUp, Sparkles, Trash2,
+  Target, GraduationCap, TrendingUp, Wand2, Trash2,
   Menu, X, Brain, Download, Upload, Square, ArrowUpRight,
   CheckCircle2, AlertCircle, Loader2, Sun, Moon, Monitor,
   User, Flag, BookMarked, KeyRound,
@@ -53,7 +53,7 @@ type AgentDef = {
 };
 
 const AGENTS: AgentDef[] = [
-  { id: 'Auto Orchestrator', icon: Sparkles, desc: 'Automatically routes to the best agent', gradient: 'from-violet-500/20 via-fuchsia-500/10 to-transparent', ring: 'ring-violet-400/30', iconColor: 'text-violet-300' },
+  { id: 'Auto Orchestrator', icon: Wand2, desc: 'Automatically routes to the best agent', gradient: 'from-violet-500/20 via-blue-500/25 to-transparent', ring: 'ring-violet-400/30', iconColor: 'text-violet-300' },
   { id: 'Career Agent',      icon: Briefcase, desc: 'Resume analysis & career roadmaps',      gradient: 'from-sky-500/20 via-blue-500/10 to-transparent',     ring: 'ring-sky-400/30',     iconColor: 'text-sky-300' },
   { id: 'Learning Agent',    icon: BookOpen, desc: 'Domain roadmaps & resources',             gradient: 'from-amber-500/20 via-orange-500/10 to-transparent', ring: 'ring-amber-400/30',   iconColor: 'text-amber-300' },
   { id: 'Code Judge',        icon: Code, desc: 'Code evaluation & complexity',                gradient: 'from-emerald-500/20 via-green-500/10 to-transparent', ring: 'ring-emerald-400/30', iconColor: 'text-emerald-300' },
@@ -437,7 +437,7 @@ export default function Chat() {
       <div className="p-4 flex items-center justify-between">
         <div className="font-semibold tracking-tight text-foreground flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center btn-gradient-primary shadow-md shadow-primary/30">
-            <Sparkles className="w-4 h-4 text-white" />
+            <Wand2 className="w-4 h-4 text-white" />
           </div>
           OrchestrateAI
         </div>
@@ -545,7 +545,7 @@ export default function Chat() {
                     <div key={p} className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2 transition-all duration-300 hover:border-border">
                       <div className="flex items-center justify-between">
                         <label className="text-sm font-medium flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
+                      <span className={`w-2 h-2 rounded-full ${meta.dot} animate-pulse-dot`} />
                           {meta.label} API Key
                         </label>
                         <div className="flex items-center gap-1.5">
@@ -736,8 +736,8 @@ export default function Chat() {
                         {AGENTS.map(a => (
                           <div key={a.id} className="flex items-center justify-between rounded-md border border-border/40 bg-foreground/[0.02] px-2.5 py-1.5 text-xs">
                             <span className="flex items-center gap-1.5 min-w-0 truncate">
-                              {memoryCounts[a.id] > 0 ? (
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
+                      {memoryCounts[a.id] > 0 ? (
+                        <span className={`w-1.5 h-1.5 rounded-full ${a.iconColor.replace('text-', 'bg-')} animate-pulse-dot`} />
                               ) : (
                                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
                               )}
@@ -786,7 +786,7 @@ export default function Chat() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2 bg-foreground/5 border-border/60 text-sm transition-all duration-300 ease-out hover:scale-105 hover:border-primary/40 hover:shadow-md hover:shadow-primary/20">
-                  {React.createElement(AGENTS.find(a => a.id === selectedAgent)?.icon || Sparkles, {
+                  {React.createElement(AGENTS.find(a => a.id === selectedAgent)?.icon || Wand2, {
                     className: `w-4 h-4 ${AGENTS.find(a => a.id === selectedAgent)?.iconColor || 'text-primary'}`,
                   })}
                   <span className="hidden sm:inline">{selectedAgent}</span>
@@ -799,7 +799,7 @@ export default function Chat() {
                   <DropdownMenuItem key={a.id} onClick={() => setSelectedAgent(a.id)} className="cursor-pointer flex flex-col items-start py-2">
                     <div className="flex items-center gap-2 font-medium w-full">
                       {memoryCounts[a.id] > 0 ? (
-                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-dot" />
+                        <span className={`h-2 w-2 rounded-full ${a.iconColor.replace('text-', 'bg-')} animate-pulse-dot`} />
                       ) : (
                         <span className="h-2 w-2 rounded-full bg-zinc-600" />
                       )}
@@ -816,7 +816,7 @@ export default function Chat() {
 
         <div className="flex-1 overflow-y-auto p-4 z-10 scroll-smooth relative" ref={scrollRef}>
           {!currentConversation?.messages.length ? (
-            <div className="absolute inset-0 animate-hero-gradient pointer-events-none opacity-60" />
+            <div className="absolute inset-0 animate-hero-gradient pointer-events-none opacity-95" />
           ) : null}
 
           {!currentConversation?.messages.length ? (
@@ -826,7 +826,7 @@ export default function Chat() {
                 style={{ animationFillMode: 'both' }}
               >
                 <div className="w-16 h-16 mx-auto mb-6 btn-gradient-primary rounded-2xl flex items-center justify-center shadow-xl shadow-primary/30 transition-all duration-300 hover:scale-110 hover:shadow-primary/50">
-                  <Sparkles className="w-8 h-8 text-white" />
+                  <Wand2 className="w-8 h-8 text-white" />
                 </div>
                 <h2 className="text-4xl font-semibold tracking-tight shimmer-text">How can I help you today?</h2>
                 <p className="text-muted-foreground text-lg max-w-xl mx-auto">OrchestrateAI is your command center for career, exams, and projects.</p>
@@ -847,7 +847,7 @@ export default function Chat() {
                         <span className="truncate">{agent.id}</span>
                       </span>
                       {memoryCounts[agent.id] > 0 ? (
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400 animate-pulse-dot" />
+                        <span className={`h-2 w-2 shrink-0 rounded-full ${agent.iconColor.replace('text-', 'bg-')} animate-pulse-dot`} />
                       ) : (
                         <span className="h-2 w-2 shrink-0 rounded-full bg-zinc-600/80" />
                       )}
@@ -875,7 +875,7 @@ export default function Chat() {
                         : 'bg-card/80 backdrop-blur-sm border border-border/60 text-foreground mr-auto rounded-tl-sm hover:border-border'}`}>
                       {msg.role === 'assistant' && msg.agent && (
                         <div className="flex items-center gap-1.5 text-[11px] font-medium text-primary mb-2 uppercase tracking-wider">
-                          <Sparkles className="w-3.5 h-3.5" />
+                          <Wand2 className="w-3.5 h-3.5" />
                           {msg.agent}
                         </div>
                       )}
@@ -890,7 +890,7 @@ export default function Chat() {
                 <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300 ease-out">
                   <div className="bg-card/80 backdrop-blur-sm border border-border/60 text-foreground px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-1.5 shadow-sm">
                     <span className="text-[11px] font-medium text-primary uppercase tracking-wider mr-1.5 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> {selectedAgent} is thinking
+                      <Wand2 className="w-3 h-3" /> {selectedAgent} is thinking
                     </span>
                     <div className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                     <div className="w-1.5 h-1.5 bg-primary/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
