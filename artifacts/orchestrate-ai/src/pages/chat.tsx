@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useAppStore, type Theme } from '@/lib/store';
+import { useAppStore, type Theme, type Conversation } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,7 +13,7 @@ import {
   CheckCircle2, AlertCircle, Loader2, Sun, Moon, Monitor,
   User, Flag, BookMarked, KeyRound, Bug, Mail, Rocket, Binary,
   Copy, Check, ThumbsUp, ThumbsDown, RotateCcw, Search,
-  Flame, BarChart3, MessageCircle, Star, FileDown, Zap,
+  Flame, BarChart3, MessageCircle, Star, FileDown, Zap, Pin, PinOff,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -201,6 +201,59 @@ function MessageContent({ text, isStreaming }: { text: string; isStreaming: bool
   );
 }
 
+// ─── Sidebar conversation row ─────────────────────────────────────────
+type ConvRowProps = {
+  conv: Conversation;
+  index: number;
+  active: boolean;
+  isPinned: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onPin: () => void;
+};
+
+function ConvRow({ conv, index, active, isPinned, onSelect, onDelete, onPin }: ConvRowProps) {
+  const agentDef = AGENTS.find(a => a.id === conv.lastAgentId);
+  return (
+    <div
+      style={{ animationDelay: `${Math.min(index, 10) * 35}ms`, animationFillMode: 'both' }}
+      className={`group relative flex items-center justify-between pl-3 pr-1.5 py-2 rounded-md cursor-pointer transition-all duration-200 ease-out animate-in fade-in slide-in-from-left-2
+        ${active
+          ? 'bg-primary/15 text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary)),0_4px_18px_-8px_hsl(var(--primary)/0.6)]'
+          : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}`}
+      onClick={onSelect}
+    >
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        {agentDef ? (
+          <span className={`w-2 h-2 rounded-full shrink-0 ${agentDef.iconColor.replace('text-', 'bg-')}`} />
+        ) : (
+          <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-primary' : ''}`} />
+        )}
+        <span className="truncate text-xs">{conv.title}</span>
+      </div>
+      {/* Action buttons — revealed on hover */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0 ml-1">
+        <button
+          title={isPinned ? 'Unpin' : 'Pin to top'}
+          onClick={e => { e.stopPropagation(); onPin(); }}
+          className={`p-1 rounded hover:bg-foreground/10 transition-colors duration-150 ${isPinned ? 'text-amber-400' : 'text-muted-foreground hover:text-amber-400'}`}
+        >
+          {isPinned
+            ? <PinOff className="w-3 h-3" />
+            : <Pin className="w-3 h-3" />}
+        </button>
+        <button
+          title="Delete"
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          className="p-1 rounded hover:bg-foreground/10 text-muted-foreground hover:text-red-400 transition-colors duration-150"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Hero floating orbs ───────────────────────────────────────────────
 function HeroOrbs() {
   return (
@@ -220,7 +273,7 @@ export default function Chat() {
     addMessage, updateMessage, updateConversationTitle, rateMessage, logout,
     apiKeyGemini, apiKeyGroq, apiKeyOpenRouter, apiKeyAnthropic, apiKeyTogether,
     setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
-    deleteConversation, theme, setTheme, streak, recordActivity,
+    deleteConversation, pinConversation, theme, setTheme, streak, recordActivity,
   } = useAppStore();
 
   const [input, setInput] = useState('');
@@ -284,10 +337,13 @@ export default function Chat() {
     return { totalConvs, totalMsgs, mostUsedAgent, topRatedAgent };
   }, [conversations]);
 
-  const filteredConversations = useMemo(() => {
-    if (!sidebarSearch.trim()) return conversations;
-    const q = sidebarSearch.toLowerCase();
-    return conversations.filter(c => c.title.toLowerCase().includes(q));
+  const { pinnedConvs, unpinnedConvs } = useMemo(() => {
+    const q = sidebarSearch.trim().toLowerCase();
+    const all = q ? conversations.filter(c => c.title.toLowerCase().includes(q)) : conversations;
+    return {
+      pinnedConvs:   all.filter(c => c.pinned),
+      unpinnedConvs: all.filter(c => !c.pinned),
+    };
   }, [conversations, sidebarSearch]);
 
   const refreshMem = () => {
@@ -685,40 +741,59 @@ export default function Chat() {
       </div>
 
       <ScrollArea className="flex-1 px-3">
-        <div className="space-y-1">
-          {filteredConversations.length === 0 && (
+        <div className="space-y-1 pb-2">
+
+          {/* ── Pinned section ───────────────────────────── */}
+          {pinnedConvs.length > 0 && (
+            <div className="mb-1">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
+                <Pin className="w-3 h-3 text-amber-400/80" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400/80">Pinned</span>
+              </div>
+              {pinnedConvs.map((conv, i) => (
+                <ConvRow
+                  key={conv.id}
+                  conv={conv}
+                  index={i}
+                  active={currentConversationId === conv.id}
+                  onSelect={() => { setCurrentConversation(conv.id); setIsSidebarOpen(false); }}
+                  onDelete={() => deleteConversation(conv.id)}
+                  onPin={() => pinConversation(conv.id, false)}
+                  isPinned
+                />
+              ))}
+              {unpinnedConvs.length > 0 && (
+                <div className="my-2 border-t border-border/40" />
+              )}
+            </div>
+          )}
+
+          {/* ── Recents section ──────────────────────────── */}
+          {pinnedConvs.length > 0 && unpinnedConvs.length > 0 && (
+            <div className="flex items-center gap-1.5 px-2 py-1 mb-1">
+              <MessageSquare className="w-3 h-3 text-muted-foreground/60" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Recent</span>
+            </div>
+          )}
+
+          {unpinnedConvs.map((conv, i) => (
+            <ConvRow
+              key={conv.id}
+              conv={conv}
+              index={i}
+              active={currentConversationId === conv.id}
+              onSelect={() => { setCurrentConversation(conv.id); setIsSidebarOpen(false); }}
+              onDelete={() => deleteConversation(conv.id)}
+              onPin={() => pinConversation(conv.id, true)}
+              isPinned={false}
+            />
+          ))}
+
+          {pinnedConvs.length === 0 && unpinnedConvs.length === 0 && (
             <div className="text-xs text-muted-foreground px-3 py-6 text-center">
               {sidebarSearch ? 'No chats found' : 'No conversations yet'}
             </div>
           )}
-          {filteredConversations.map((conv, i) => {
-            const active = currentConversationId === conv.id;
-            const agentDef = AGENTS.find(a => a.id === conv.lastAgentId);
-            return (
-              <div
-                key={conv.id}
-                style={{ animationDelay: `${Math.min(i, 10) * 35}ms`, animationFillMode: 'both' }}
-                className={`group relative flex items-center justify-between pl-3 pr-2 py-2 text-sm rounded-md cursor-pointer transition-all duration-200 ease-out animate-in fade-in slide-in-from-left-2
-                  ${active
-                    ? 'bg-primary/15 text-foreground shadow-[inset_3px_0_0_0_hsl(var(--primary)),0_4px_18px_-8px_hsl(var(--primary)/0.6)]'
-                    : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}`}
-                onClick={() => { setCurrentConversation(conv.id); setIsSidebarOpen(false); }}
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  {agentDef ? (
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${agentDef.iconColor.replace('text-', 'bg-')}`} />
-                  ) : (
-                    <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${active ? 'text-primary' : ''}`} />
-                  )}
-                  <span className="truncate text-xs">{conv.title}</span>
-                </div>
-                <Trash2
-                  className="w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all duration-200 ml-1"
-                  onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                />
-              </div>
-            );
-          })}
         </div>
       </ScrollArea>
 

@@ -16,6 +16,7 @@ export type Conversation = {
   messages: Message[];
   updatedAt: number;
   lastAgentId?: string;
+  pinned?: boolean;
 };
 
 export type Theme = 'dark' | 'light' | 'system';
@@ -54,6 +55,7 @@ type Actions = {
   updateConversationTitle: (conversationId: string, title: string) => void;
   rateMessage: (conversationId: string, messageId: string, rating: 'up' | 'down' | undefined) => void;
   deleteConversation: (id: string) => void;
+  pinConversation: (id: string, pinned: boolean) => void;
   recordActivity: () => void;
 };
 
@@ -248,6 +250,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const pinConversation = (id: string, pinned: boolean) => {
+    setState(s => ({
+      ...s,
+      conversations: s.conversations.map(c =>
+        c.id === id ? { ...c, pinned } : c
+      ),
+    }));
+  };
+
   return (
     <AppContext.Provider value={{
       ...state,
@@ -255,7 +266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
       setSelectedModel, setSelectedAgent, setTheme,
       createConversation, setCurrentConversation, addMessage, updateMessage,
-      updateConversationTitle, rateMessage, deleteConversation, recordActivity,
+      updateConversationTitle, rateMessage, deleteConversation, pinConversation, recordActivity,
     }}>
       {children}
     </AppContext.Provider>
