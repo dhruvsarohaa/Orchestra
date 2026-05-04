@@ -1,17 +1,21 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Message = {
+export type Message = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   agent?: string;
+  timestamp: number;
+  rating?: 'up' | 'down';
+  failed?: boolean;
 };
 
-type Conversation = {
+export type Conversation = {
   id: string;
   title: string;
   messages: Message[];
   updatedAt: number;
+  lastAgentId?: string;
 };
 
 export type Theme = 'dark' | 'light' | 'system';
@@ -28,6 +32,8 @@ type State = {
   selectedModel: string;
   selectedAgent: string;
   theme: Theme;
+  streak: number;
+  lastActiveDate: string;
 };
 
 type Actions = {
@@ -43,12 +49,19 @@ type Actions = {
   setTheme: (theme: Theme) => void;
   createConversation: () => string;
   setCurrentConversation: (id: string) => void;
-  addMessage: (conversationId: string, message: Omit<Message, 'id'>) => string;
-  updateMessage: (conversationId: string, messageId: string, content: string) => void;
+  addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => string;
+  updateMessage: (conversationId: string, messageId: string, content: string, failed?: boolean) => void;
+  updateConversationTitle: (conversationId: string, title: string) => void;
+  rateMessage: (conversationId: string, messageId: string, rating: 'up' | 'down' | undefined) => void;
   deleteConversation: (id: string) => void;
+  recordActivity: () => void;
 };
 
 const AppContext = createContext<(State & Actions) | null>(null);
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<State>(() => {
@@ -64,6 +77,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedModel: 'gemini-1.5-flash-latest',
       selectedAgent: 'Auto Orchestrator',
       theme: 'dark',
+      streak: 0,
+      lastActiveDate: '',
     };
     const saved = localStorage.getItem('orchestrate-ai-state');
     if (saved) {
@@ -79,6 +94,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiKeyTogether: parsed.apiKeyTogether ?? '',
           theme: parsed.theme ?? 'dark',
           currentConversationId: null,
+          streak: parsed.streak ?? 0,
+          lastActiveDate: parsed.lastActiveDate ?? '',
         };
       } catch (e) {
         console.error(e);
@@ -124,9 +141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   };
 
-  const logout = () => {
-    setState(s => ({ ...s, isAuthenticated: false }));
-  };
+  const logout = () => setState(s => ({ ...s, isAuthenticated: false }));
 
   const setApiKeyGemini = (key: string) => setState(s => ({ ...s, apiKeyGemini: key }));
   const setApiKeyGroq = (key: string) => setState(s => ({ ...s, apiKeyGroq: key }));
@@ -136,6 +151,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setSelectedModel = (model: string) => setState(s => ({ ...s, selectedModel: model }));
   const setSelectedAgent = (agent: string) => setState(s => ({ ...s, selectedAgent: agent }));
   const setTheme = (theme: Theme) => setState(s => ({ ...s, theme }));
+
+  const recordActivity = () => {
+    setState(s => {
+      const today = todayStr();
+      if (s.lastActiveDate === today) return s;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yStr = yesterday.toISOString().slice(0, 10);
+      const newStreak = s.lastActiveDate === yStr ? s.streak + 1 : 1;
+      return { ...s, lastActiveDate: today, streak: newStreak };
+    });
+  };
 
   const createConversation = () => {
     const id = Date.now().toString();
@@ -153,39 +180,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return id;
   };
 
-  const setCurrentConversation = (id: string) => {
-    setState(s => ({ ...s, currentConversationId: id }));
-  };
+  const setCurrentConversation = (id: string) => setState(s => ({ ...s, currentConversationId: id }));
 
-  const addMessage = (conversationId: string, message: Omit<Message, 'id'>) => {
+  const addMessage = (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => {
     const newId = Date.now().toString() + Math.random().toString(36).slice(2);
     setState(s => {
       const convs = [...s.conversations];
       const idx = convs.findIndex(c => c.id === conversationId);
       if (idx === -1) return s;
-      
       const conv = { ...convs[idx] };
-      conv.messages = [...conv.messages, { ...message, id: newId }];
+      const newMsg: Message = { ...message, id: newId, timestamp: Date.now() };
+      conv.messages = [...conv.messages, newMsg];
       conv.updatedAt = Date.now();
-      
+      if (message.agent) conv.lastAgentId = message.agent;
       if (conv.messages.length === 1 && message.role === 'user') {
-        conv.title = message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '');
+        conv.title = message.content.slice(0, 35) + (message.content.length > 35 ? '...' : '');
       }
-      
       convs[idx] = conv;
       return { ...s, conversations: convs };
     });
     return newId;
   };
 
-  const updateMessage = (conversationId: string, messageId: string, content: string) => {
+  const updateMessage = (conversationId: string, messageId: string, content: string, failed?: boolean) => {
     setState(s => {
       const convs = [...s.conversations];
       const idx = convs.findIndex(c => c.id === conversationId);
       if (idx === -1) return s;
       const conv = { ...convs[idx] };
-      conv.messages = conv.messages.map(m => m.id === messageId ? { ...m, content } : m);
+      conv.messages = conv.messages.map(m =>
+        m.id === messageId ? { ...m, content, ...(failed !== undefined ? { failed } : {}) } : m
+      );
       conv.updatedAt = Date.now();
+      convs[idx] = conv;
+      return { ...s, conversations: convs };
+    });
+  };
+
+  const updateConversationTitle = (conversationId: string, title: string) => {
+    setState(s => ({
+      ...s,
+      conversations: s.conversations.map(c =>
+        c.id === conversationId ? { ...c, title } : c
+      ),
+    }));
+  };
+
+  const rateMessage = (conversationId: string, messageId: string, rating: 'up' | 'down' | undefined) => {
+    setState(s => {
+      const convs = [...s.conversations];
+      const idx = convs.findIndex(c => c.id === conversationId);
+      if (idx === -1) return s;
+      const conv = { ...convs[idx] };
+      conv.messages = conv.messages.map(m =>
+        m.id === messageId ? { ...m, rating } : m
+      );
       convs[idx] = conv;
       return { ...s, conversations: convs };
     });
@@ -202,9 +251,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       ...state,
-      login, logout, setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
+      login, logout,
+      setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
       setSelectedModel, setSelectedAgent, setTheme,
-      createConversation, setCurrentConversation, addMessage, updateMessage, deleteConversation
+      createConversation, setCurrentConversation, addMessage, updateMessage,
+      updateConversationTitle, rateMessage, deleteConversation, recordActivity,
     }}>
       {children}
     </AppContext.Provider>

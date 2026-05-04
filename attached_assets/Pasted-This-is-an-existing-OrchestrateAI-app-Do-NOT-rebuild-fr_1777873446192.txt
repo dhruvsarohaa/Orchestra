@@ -1,0 +1,133 @@
+This is an existing OrchestrateAI app. Do NOT rebuild from scratch. Do NOT break existing functionality. Only add and improve. Test after each major section before moving to the next.
+
+---
+
+## SECTION 1 — NEW AGENTS (add these to the existing agent grid)
+
+**1. Debug Agent**
+Purpose: Paste any code and it finds bugs, explains why they happen, and gives the fixed version
+System prompt focus: Act as a senior developer doing code review. Find all bugs, explain each one clearly, provide corrected code with comments
+Color theme: Red/orange
+
+**2. DSA Coach Agent**
+Purpose: Explains any DSA concept or problem step by step with examples, time/space complexity, and Java code
+System prompt focus: Act as a DSA tutor. Always explain approach first, then dry run with example, then give clean Java code, then state T.C and S.C
+Color theme: Green
+
+**3. Email & LinkedIn Writer Agent**
+Purpose: Writes cold emails, LinkedIn messages, connection requests, follow-ups — professional tone
+System prompt focus: Act as a professional communication expert. Write concise, impactful messages that get responses
+Color theme: Blue
+
+**4. Project Idea Agent**
+Purpose: Generates unique project ideas based on user's skills and goals, with full tech stack and implementation roadmap
+System prompt focus: Generate ideas that are buildable in 1-4 weeks, include tech stack, features list, and why it's impressive for a portfolio
+Color theme: Purple
+
+---
+
+## SECTION 2 — UI/UX UPGRADES
+
+**Agent Cards:**
+- Fix truncated titles — show full name always, reduce font size if needed
+- Each card gets a unique gradient background matching its color theme
+- On hover: card lifts with box-shadow, shows a glowing "Open" button
+- Active/selected card gets a glowing border
+- Add agent icon that's unique and meaningful (not just generic icons)
+
+**Chat Interface:**
+- User messages: gradient purple bubble, right aligned
+- AI messages: dark card with subtle left border in agent's color
+- Add smooth fade-in animation (200ms) for each new message
+- Add copy button on every AI message (appears on hover)
+- Add timestamp on each message (subtle, small text)
+- Code blocks inside responses: syntax highlighted, with a copy button
+
+**Homepage Hero:**
+- Animated gradient background — slow shifting purple to blue to indigo
+- Add a subtle particle or floating orb animation in background
+- Make the headline bigger and bolder
+- Add a live counter below hero: "X conversations powered" (stored in localStorage, increments each message)
+
+**Sidebar:**
+- Chat history items: show which agent was used with a small colored dot
+- Hover effect: subtle background highlight
+- Active chat: glowing left border in purple
+- Add a search bar at top of chat history to find old conversations
+
+**General:**
+- All transitions: 200-300ms ease
+- Every button: gradient background, glow on hover
+- Scrollbars: custom styled to match dark theme
+- Add a subtle noise/grain texture to the background for depth
+
+---
+
+## SECTION 3 — POWERFUL NEW FEATURES
+
+**1. Conversation Export**
+Add an export button inside each chat that downloads the full conversation as a clean PDF or markdown file
+Include: agent name, date, all messages formatted cleanly
+
+**2. Prompt Templates**
+Above the input box, add 3-4 quick prompt chips that change based on which agent is active
+Examples for Career Agent: "Analyze my resume", "Give me a roadmap", "What skills should I learn"
+Examples for Code Judge: "Review my code", "Find bugs", "Optimize this"
+Chips are clickable and auto-fill the input box
+
+**3. Response Rating**
+Below every AI response add a thumbs up / thumbs down rating
+Store ratings in localStorage
+In the Memory panel, show "Most helpful agent" based on ratings
+
+**4. Auto Title Generation**
+After the first message in any conversation, auto-generate a short 4-5 word title for that chat using the AI
+Replace "New Conversation" in sidebar with this generated title
+
+**5. Usage Stats Dashboard**
+Add a Stats section in Settings showing:
+- Total conversations
+- Most used agent
+- Total messages sent
+- Favorite model
+- Days streak (how many consecutive days used)
+All from localStorage — no backend needed
+
+---
+
+## SECTION 4 — PERFORMANCE & TECHNICAL
+
+**1. Fix Agent Card Titles**
+All agent names must show in full — no truncation with "..." anywhere
+
+**2. Mobile Responsive**
+Make the entire app fully usable on mobile:
+- Sidebar collapses to a hamburger menu on small screens
+- Agent cards stack to 2-column grid on mobile
+- Input box stays fixed at bottom on mobile
+- Memory panel opens as full screen modal on mobile
+
+**3. Keyboard Shortcuts**
+- Ctrl/Cmd + K: open agent selector
+- Ctrl/Cmd + N: new chat
+- Escape: close any open panel
+- Enter: send message, Shift+Enter: new line
+
+**4. Error Handling**
+Never show raw API errors to users
+If any API call fails show a friendly message: "Something went wrong. Try a different model or check your API key in Settings."
+Add a retry button on failed messages
+
+**5. Loading States**
+Every button should show a loading spinner when processing
+Agent cards should show a subtle pulse animation while AI is generating
+
+---
+
+## RULES
+- Do NOT touch existing memory system, streaming, or authentication
+- Do NOT change existing agent logic or system prompts
+- Match existing dark theme throughout
+- Mobile responsiveness is non-negotiable
+- Start with Section 1 (new agents), then Section 2 (UI), then Section 3 (features), then Section 4 (performance)
+- After each section, verify nothing existing is broken before continuing
