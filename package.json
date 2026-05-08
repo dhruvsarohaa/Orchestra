@@ -2,15 +2,27 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "pnpm@11.0.8",
   "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "preinstall": "node -e \"const fs=require('fs'); for (const f of ['package-lock.json','yarn.lock']) fs.rmSync(f,{force:true}); const ua=process.env.npm_config_user_agent||''; const exec=process.env.npm_execpath||''; if (!/pnpm/i.test(ua+exec)) { console.error('Use pnpm instead'); process.exit(1); }\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "dev:web": "pnpm --filter @workspace/orchestrate-ai dev",
+    "start": "pnpm --filter @workspace/orchestrate-ai serve",
+    "lint": "pnpm -r --if-present run lint",
+    "format": "prettier --write .",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "prettier": "^3.8.1",
     "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "typescript-eslint": "^8.46.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1"
   }
 }

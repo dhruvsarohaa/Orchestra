@@ -1,13 +1,11 @@
 import express, { type Request, type Response } from "express";
 import path from "path";
 import { fileURLToPath } from "url";
+import { generateLLM, providerFromHeader, streamLLM, writeSseHeaders } from "@workspace/provider-proxy";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const rawPort = process.env.PORT;
-if (!rawPort) {
-  throw new Error("PORT environment variable is required.");
-}
+const rawPort = process.env.PORT || "5173";
 const PORT = Number(rawPort);
 if (Number.isNaN(PORT) || PORT <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -16,120 +14,83 @@ if (Number.isNaN(PORT) || PORT <= 0) {
 const isProd = process.env.NODE_ENV === "production";
 
 type GeminiBody = {
+  providerId?: "google" | "groq" | "openrouter" | "anthropic" | "together";
   modelId?: string;
   prompt?: string;
   image?: { mimeType: string; data: string } | null;
+  temperature?: number;
+  maxTokens?: number;
 };
-
-function buildContents(prompt: string, image?: GeminiBody["image"]) {
-  const parts: any[] = [{ text: prompt }];
-  if (image && image.mimeType && image.data) {
-    parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
-  }
-  return [{ parts }];
-}
 
 async function main() {
   const app = express();
   app.use(express.json({ limit: "25mb" }));
 
-  app.post("/api/gemini/stream", async (req: Request, res: Response) => {
-    const apiKey = req.header("x-gemini-key");
-    const { modelId, prompt, image } = (req.body || {}) as GeminiBody;
+  app.use((req, _res, next) => {
+    req.setTimeout(60000);
+    next();
+  });
 
-    if (!apiKey) {
-      res.status(400).json({ error: "Missing x-gemini-key header" });
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ ok: true, service: "orchestrateai" });
+  });
+
+  app.post("/api/llm/stream", async (req: Request, res: Response) => {
+    const { modelId, prompt, image, temperature, maxTokens, providerId } = (req.body || {}) as GeminiBody;
+    const provider = providerFromHeader(providerId || req.header("x-provider-id") || "google");
+    const apiKey = req.header("x-provider-key") || process.env[`${provider.toUpperCase()}_API_KEY`];
+    if (!apiKey || !modelId || !prompt) {
+      res.status(400).json({ error: { code: "bad_request", message: "Missing provider key, modelId, or prompt" } });
       return;
     }
-    if (!modelId || !prompt) {
-      res.status(400).json({ error: "Missing modelId or prompt" });
-      return;
-    }
-
-    const upstreamUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}` +
-      `:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
-
     const controller = new AbortController();
     req.on("close", () => controller.abort());
-
-    let upstream: Response;
+    writeSseHeaders(res);
     try {
-      upstream = (await fetch(upstreamUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: buildContents(prompt, image) }),
+      const stream = streamLLM({
+        provider,
+        modelId,
+        prompt,
+        image: image ?? null,
+        apiKey,
+        temperature,
+        maxTokens,
         signal: controller.signal,
-      })) as unknown as Response;
-    } catch (err: any) {
-      if (!res.headersSent) {
-        res.status(502).json({ error: `Upstream fetch failed: ${err?.message || err}` });
+      });
+      for await (const chunk of stream) {
+        res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
       }
-      return;
-    }
-
-    if (!upstream.ok || !upstream.body) {
-      let detail = "";
-      try {
-        detail = await upstream.text();
-      } catch {}
-      res
-        .status(upstream.status || 502)
-        .type("text/plain")
-        .send(detail || `Gemini upstream ${upstream.status}`);
-      return;
-    }
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders?.();
-
-    const reader = (upstream.body as any).getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (value) res.write(Buffer.from(value));
-      }
-    } catch {
-      // client aborted or upstream error mid-stream
-    } finally {
-      try {
-        await reader.cancel();
-      } catch {}
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Stream failed";
+      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
       res.end();
     }
   });
 
-  app.post("/api/gemini/generate", async (req: Request, res: Response) => {
-    const apiKey = req.header("x-gemini-key");
-    const { modelId, prompt, image } = (req.body || {}) as GeminiBody;
-
-    if (!apiKey) {
-      res.status(400).json({ error: "Missing x-gemini-key header" });
+  app.post("/api/llm/generate", async (req: Request, res: Response) => {
+    const { modelId, prompt, image, temperature, maxTokens, providerId } = (req.body || {}) as GeminiBody;
+    const provider = providerFromHeader(providerId || req.header("x-provider-id") || "google");
+    const apiKey = req.header("x-provider-key") || process.env[`${provider.toUpperCase()}_API_KEY`];
+    if (!apiKey || !modelId || !prompt) {
+      res.status(400).json({ error: { code: "bad_request", message: "Missing provider key, modelId, or prompt" } });
       return;
     }
-    if (!modelId || !prompt) {
-      res.status(400).json({ error: "Missing modelId or prompt" });
-      return;
-    }
-
-    const upstreamUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}` +
-      `:generateContent?key=${encodeURIComponent(apiKey)}`;
-
     try {
-      const upstream = await fetch(upstreamUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: buildContents(prompt, image) }),
+      const text = await generateLLM({
+        provider,
+        modelId,
+        prompt,
+        image: image ?? null,
+        apiKey,
+        temperature,
+        maxTokens,
       });
-      const text = await upstream.text();
-      res.status(upstream.status).type("application/json").send(text);
-    } catch (err: any) {
-      res.status(502).json({ error: `Upstream fetch failed: ${err?.message || err}` });
+      res.status(200).json({ text });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Generate failed";
+      res.status(502).json({ error: { code: "upstream_error", message } });
     }
   });
 

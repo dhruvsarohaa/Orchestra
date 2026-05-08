@@ -20,6 +20,16 @@ export type Conversation = {
 };
 
 export type Theme = 'dark' | 'light' | 'system';
+export type ReasoningMode = 'fast' | 'balanced' | 'deep';
+export type PerformanceMode = 'quality' | 'balanced' | 'speed';
+export type ProviderId = 'google' | 'groq' | 'openrouter' | 'anthropic' | 'together';
+
+export type AgentPreference = {
+  modelId?: string;
+  temperature?: number;
+  reasoningMode?: ReasoningMode;
+  memoryEnabled?: boolean;
+};
 
 type State = {
   isAuthenticated: boolean;
@@ -33,6 +43,19 @@ type State = {
   selectedModel: string;
   selectedAgent: string;
   theme: Theme;
+  temperature: number;
+  tokenLimit: number;
+  reasoningMode: ReasoningMode;
+  memoryEnabled: boolean;
+  providerPriority: ProviderId[];
+  fallbackModel: string;
+  localModelsEnabled: boolean;
+  cloudModelsEnabled: boolean;
+  performanceMode: PerformanceMode;
+  privacyMode: boolean;
+  notificationsEnabled: boolean;
+  keyboardShortcutsEnabled: boolean;
+  agentPreferences: Record<string, AgentPreference>;
   streak: number;
   lastActiveDate: string;
 };
@@ -48,6 +71,20 @@ type Actions = {
   setSelectedModel: (model: string) => void;
   setSelectedAgent: (agent: string) => void;
   setTheme: (theme: Theme) => void;
+  setTemperature: (temperature: number) => void;
+  setTokenLimit: (tokenLimit: number) => void;
+  setReasoningMode: (mode: ReasoningMode) => void;
+  setMemoryEnabled: (enabled: boolean) => void;
+  setProviderPriority: (providers: ProviderId[]) => void;
+  setFallbackModel: (model: string) => void;
+  setLocalModelsEnabled: (enabled: boolean) => void;
+  setCloudModelsEnabled: (enabled: boolean) => void;
+  setPerformanceMode: (mode: PerformanceMode) => void;
+  setPrivacyMode: (enabled: boolean) => void;
+  setNotificationsEnabled: (enabled: boolean) => void;
+  setKeyboardShortcutsEnabled: (enabled: boolean) => void;
+  setAgentPreference: (agent: string, preference: AgentPreference) => void;
+  importConfiguration: (config: Partial<State>) => void;
   createConversation: () => string;
   setCurrentConversation: (id: string) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => string;
@@ -79,6 +116,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedModel: 'gemini-1.5-flash-latest',
       selectedAgent: 'Auto Orchestrator',
       theme: 'dark',
+      temperature: 0.7,
+      tokenLimit: 2048,
+      reasoningMode: 'balanced',
+      memoryEnabled: true,
+      providerPriority: ['google', 'groq', 'anthropic', 'openrouter', 'together'],
+      fallbackModel: 'gemini-1.5-flash-latest',
+      localModelsEnabled: false,
+      cloudModelsEnabled: true,
+      performanceMode: 'balanced',
+      privacyMode: false,
+      notificationsEnabled: false,
+      keyboardShortcutsEnabled: true,
+      agentPreferences: {},
       streak: 0,
       lastActiveDate: '',
     };
@@ -95,6 +145,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           apiKeyAnthropic: parsed.apiKeyAnthropic ?? '',
           apiKeyTogether: parsed.apiKeyTogether ?? '',
           theme: parsed.theme ?? 'dark',
+          temperature: typeof parsed.temperature === 'number' ? parsed.temperature : defaults.temperature,
+          tokenLimit: typeof parsed.tokenLimit === 'number' ? parsed.tokenLimit : defaults.tokenLimit,
+          reasoningMode: parsed.reasoningMode ?? defaults.reasoningMode,
+          memoryEnabled: parsed.memoryEnabled ?? defaults.memoryEnabled,
+          providerPriority: Array.isArray(parsed.providerPriority) ? parsed.providerPriority : defaults.providerPriority,
+          fallbackModel: parsed.fallbackModel ?? defaults.fallbackModel,
+          localModelsEnabled: parsed.localModelsEnabled ?? defaults.localModelsEnabled,
+          cloudModelsEnabled: parsed.cloudModelsEnabled ?? defaults.cloudModelsEnabled,
+          performanceMode: parsed.performanceMode ?? defaults.performanceMode,
+          privacyMode: parsed.privacyMode ?? defaults.privacyMode,
+          notificationsEnabled: parsed.notificationsEnabled ?? defaults.notificationsEnabled,
+          keyboardShortcutsEnabled: parsed.keyboardShortcutsEnabled ?? defaults.keyboardShortcutsEnabled,
+          agentPreferences: parsed.agentPreferences ?? defaults.agentPreferences,
           currentConversationId: null,
           streak: parsed.streak ?? 0,
           lastActiveDate: parsed.lastActiveDate ?? '',
@@ -136,7 +199,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [state]);
 
   const login = (password: string) => {
-    if (password === 'dhruv111') {
+    if (password.trim() === 'dhruv111') {
       setState(s => ({ ...s, isAuthenticated: true }));
       return true;
     }
@@ -153,6 +216,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setSelectedModel = (model: string) => setState(s => ({ ...s, selectedModel: model }));
   const setSelectedAgent = (agent: string) => setState(s => ({ ...s, selectedAgent: agent }));
   const setTheme = (theme: Theme) => setState(s => ({ ...s, theme }));
+  const setTemperature = (temperature: number) => setState(s => ({ ...s, temperature: Math.max(0, Math.min(2, temperature)) }));
+  const setTokenLimit = (tokenLimit: number) => setState(s => ({ ...s, tokenLimit: Math.max(256, Math.min(32000, Math.round(tokenLimit))) }));
+  const setReasoningMode = (reasoningMode: ReasoningMode) => setState(s => ({ ...s, reasoningMode }));
+  const setMemoryEnabled = (memoryEnabled: boolean) => setState(s => ({ ...s, memoryEnabled }));
+  const setProviderPriority = (providerPriority: ProviderId[]) => setState(s => ({ ...s, providerPriority }));
+  const setFallbackModel = (fallbackModel: string) => setState(s => ({ ...s, fallbackModel }));
+  const setLocalModelsEnabled = (localModelsEnabled: boolean) => setState(s => ({ ...s, localModelsEnabled }));
+  const setCloudModelsEnabled = (cloudModelsEnabled: boolean) => setState(s => ({ ...s, cloudModelsEnabled }));
+  const setPerformanceMode = (performanceMode: PerformanceMode) => setState(s => ({ ...s, performanceMode }));
+  const setPrivacyMode = (privacyMode: boolean) => setState(s => ({ ...s, privacyMode }));
+  const setNotificationsEnabled = (notificationsEnabled: boolean) => setState(s => ({ ...s, notificationsEnabled }));
+  const setKeyboardShortcutsEnabled = (keyboardShortcutsEnabled: boolean) => setState(s => ({ ...s, keyboardShortcutsEnabled }));
+  const setAgentPreference = (agent: string, preference: AgentPreference) => setState(s => ({
+    ...s,
+    agentPreferences: {
+      ...s.agentPreferences,
+      [agent]: { ...(s.agentPreferences[agent] || {}), ...preference },
+    },
+  }));
+  const importConfiguration = (config: Partial<State>) => setState(s => ({
+    ...s,
+    ...config,
+    isAuthenticated: s.isAuthenticated,
+    currentConversationId: null,
+  }));
 
   const recordActivity = () => {
     setState(s => {
@@ -265,6 +353,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       login, logout,
       setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
       setSelectedModel, setSelectedAgent, setTheme,
+      setTemperature, setTokenLimit, setReasoningMode, setMemoryEnabled,
+      setProviderPriority, setFallbackModel, setLocalModelsEnabled, setCloudModelsEnabled,
+      setPerformanceMode, setPrivacyMode, setNotificationsEnabled, setKeyboardShortcutsEnabled,
+      setAgentPreference, importConfiguration,
       createConversation, setCurrentConversation, addMessage, updateMessage,
       updateConversationTitle, rateMessage, deleteConversation, pinConversation, recordActivity,
     }}>

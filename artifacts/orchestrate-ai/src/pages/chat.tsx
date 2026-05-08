@@ -14,6 +14,7 @@ import {
   User, Flag, BookMarked, KeyRound, Bug, Mail, Rocket, Binary,
   Copy, Check, ThumbsUp, ThumbsDown, RotateCcw, Search,
   Flame, BarChart3, MessageCircle, Star, FileDown, Zap, Pin, PinOff,
+  SlidersHorizontal, Database, Shield, Bell, Keyboard, Gauge, Cloud, HardDrive, Save, Pencil,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -39,98 +40,24 @@ import {
   readProfile, writeProfile, clearProfile,
   appendRecent, readRecent, writeRecent,
   readSummary, writeSummary, clearAgentMemory,
+  readMemoryItems, upsertMemoryItem, updateMemoryItem, deleteMemoryItem, importMemoryItems,
+  promoteMemoryItemToShared,
   heuristicExtractFacts, tryParseAiFacts, addFacts,
   buildPrompt, FACTS_EXTRACTION_PROMPT, SUMMARIZATION_PROMPT,
-  totalFactCount, type Profile,
+  totalFactCount, type Profile, type MemoryItem, type MemoryCategory, type MemoryScope,
   MAX_RECENT, SUMMARIZE_AT,
 } from '@/lib/memory';
 import {
   streamFor, nonStreamingFallback, type ProviderId,
 } from '@/lib/streaming';
+import { toast } from '@/hooks/use-toast';
+import { AGENTS, AGENT_SYSTEM_PROMPTS, PROMPT_CHIPS } from '@/lib/agents';
+import { MODELS, PROVIDERS } from '@/lib/models';
+import { routeAgentForMessage } from '@/lib/routing';
 
-// ─── Agent Definitions ────────────────────────────────────────────────
-type AgentDef = {
-  id: string;
-  icon: React.ComponentType<any>;
-  desc: string;
-  gradient: string;
-  ring: string;
-  iconColor: string;
-};
+const MEMORY_CATEGORIES: MemoryCategory[] = ['identity', 'goals', 'context', 'preference', 'project', 'skill', 'constraint', 'workflow'];
 
-const AGENTS: AgentDef[] = [
-  { id: 'Auto Orchestrator', icon: Wand2,        desc: 'Automatically routes to the best agent',              gradient: 'from-violet-500/20 via-blue-500/25 to-transparent',    ring: 'ring-violet-400/30',  iconColor: 'text-violet-300' },
-  { id: 'Career Agent',      icon: Briefcase,    desc: 'Resume analysis & career roadmaps',                   gradient: 'from-sky-500/20 via-blue-500/10 to-transparent',       ring: 'ring-sky-400/30',     iconColor: 'text-sky-300' },
-  { id: 'Learning Agent',    icon: BookOpen,     desc: 'Domain roadmaps & learning resources',                gradient: 'from-amber-500/20 via-orange-500/10 to-transparent',   ring: 'ring-amber-400/30',   iconColor: 'text-amber-300' },
-  { id: 'Code Judge',        icon: Code,         desc: 'Code evaluation & complexity analysis',               gradient: 'from-emerald-500/20 via-green-500/10 to-transparent',  ring: 'ring-emerald-400/30', iconColor: 'text-emerald-300' },
-  { id: 'Debug Agent',       icon: Bug,          desc: 'Find bugs, explain causes, get fixed code',           gradient: 'from-red-500/20 via-orange-500/15 to-transparent',     ring: 'ring-red-400/30',     iconColor: 'text-red-300' },
-  { id: 'DSA Coach',         icon: Binary,       desc: 'DSA concepts, dry runs, Java code & complexity',      gradient: 'from-green-500/20 via-teal-500/10 to-transparent',     ring: 'ring-green-400/30',   iconColor: 'text-green-300' },
-  { id: 'Email Writer',      icon: Mail,         desc: 'Cold emails, LinkedIn messages & follow-ups',         gradient: 'from-blue-500/20 via-cyan-500/10 to-transparent',      ring: 'ring-blue-400/30',    iconColor: 'text-blue-300' },
-  { id: 'Project Idea Agent',icon: Rocket,       desc: 'Unique project ideas with full tech stack & roadmap', gradient: 'from-purple-500/20 via-fuchsia-500/15 to-transparent', ring: 'ring-purple-400/30',  iconColor: 'text-purple-300' },
-  { id: 'Vision Agent',      icon: Eye,          desc: 'Solve visual problems with image analysis',           gradient: 'from-pink-500/20 via-purple-500/10 to-transparent',   ring: 'ring-pink-400/30',    iconColor: 'text-pink-300' },
-  { id: 'Resume Builder',    icon: FileText,     desc: 'ATS optimization & resume writing',                   gradient: 'from-cyan-500/20 via-teal-500/10 to-transparent',     ring: 'ring-cyan-400/30',    iconColor: 'text-cyan-300' },
-  { id: 'Interview Prep',    icon: UserCircle,   desc: 'Mock questions & STAR method answers',                gradient: 'from-rose-500/20 via-pink-500/10 to-transparent',     ring: 'ring-rose-400/30',    iconColor: 'text-rose-300' },
-  { id: 'Project Ideas',     icon: Lightbulb,    desc: 'Innovative ideas & technology stacks',                gradient: 'from-yellow-500/20 via-amber-500/10 to-transparent',  ring: 'ring-yellow-400/30',  iconColor: 'text-yellow-300' },
-  { id: 'Study Planner',     icon: Calendar,     desc: 'Personalized study schedules',                        gradient: 'from-indigo-500/20 via-violet-500/10 to-transparent',  ring: 'ring-indigo-400/30',  iconColor: 'text-indigo-300' },
-  { id: 'Skill Gap Analyzer',icon: Target,       desc: 'Skills vs industry requirements',                     gradient: 'from-orange-500/20 via-red-500/10 to-transparent',    ring: 'ring-orange-400/30',  iconColor: 'text-orange-300' },
-  { id: 'Competitive Exam',  icon: GraduationCap,desc: 'Exam roadmaps & practice problems',                  gradient: 'from-teal-500/20 via-emerald-500/10 to-transparent',  ring: 'ring-teal-400/30',    iconColor: 'text-teal-300' },
-  { id: 'Progress Tracker',  icon: TrendingUp,   desc: 'Track history & get insights',                        gradient: 'from-lime-500/20 via-green-500/10 to-transparent',    ring: 'ring-lime-400/30',    iconColor: 'text-lime-300' },
-];
-
-// ─── Agent-specific system prompts ────────────────────────────────────
-const AGENT_SYSTEM_PROMPTS: Record<string, string> = {
-  'Debug Agent': 'You are a senior developer doing code review. When given code: 1) List ALL bugs with clear explanations of why they occur, 2) Provide the fully corrected code with inline comments explaining each fix. Be thorough and educational.',
-  'DSA Coach': 'You are an expert DSA tutor. Always follow this structure: 1) Explain the approach/algorithm, 2) Dry run with a concrete example showing each step, 3) Provide clean Java implementation with comments, 4) State Time Complexity O() and Space Complexity O(). Be clear and educational.',
-  'Email Writer': 'You are a professional communication expert. Write concise, impactful outreach messages. For cold emails: strong hook, value proposition, clear CTA, under 150 words. For LinkedIn connection requests: genuine and conversational, under 300 characters. Always adapt tone to context.',
-  'Project Idea Agent': 'You are a project ideation expert. Generate unique, buildable project ideas. For each idea provide: 1) Project name & concept, 2) Full tech stack with specific libraries, 3) MVP features (buildable in 1-2 weeks), 4) Advanced features, 5) Why it impresses for a portfolio. Give 2-3 varied options.',
-};
-
-// ─── Prompt chips per agent ───────────────────────────────────────────
-const PROMPT_CHIPS: Record<string, string[]> = {
-  'Auto Orchestrator':  ['Help me plan today', 'Give me a challenge', 'What should I focus on?', 'Review my week'],
-  'Career Agent':       ['Analyze my resume', 'Give me a career roadmap', 'What skills should I learn?', 'Suggest job titles'],
-  'Learning Agent':     ['Create a 30-day roadmap', 'Explain this concept simply', 'Best resources for X', 'Quiz me on this'],
-  'Code Judge':         ['Review my code', 'Find the time complexity', 'Optimize this function', 'Explain this code'],
-  'Debug Agent':        ['Find bugs in my code', 'Why is this error happening?', 'Fix this function', 'Review this class'],
-  'DSA Coach':          ['Explain binary search trees', 'Teach me dynamic programming', 'What\'s the complexity?', 'Solve this problem'],
-  'Email Writer':       ['Write a cold recruiter email', 'LinkedIn connection request', 'Follow-up after no reply', 'Improve this message'],
-  'Project Idea Agent': ['Portfolio project with React', 'AI-powered app idea', 'Weekend hackathon idea', 'MERN stack project'],
-  'Vision Agent':       ['Analyze this image', 'Read this diagram', 'What\'s wrong here?', 'Solve this visual problem'],
-  'Resume Builder':     ['Improve my bullet points', 'ATS optimization tips', 'Write a professional summary', 'Format my experience'],
-  'Interview Prep':     ['Practice behavioral questions', 'Give me STAR examples', 'SDE interview questions', 'Mock interview me'],
-  'Project Ideas':      ['Unique web app ideas', 'Open source project', 'AI integration project', 'Impressive college project'],
-  'Study Planner':      ['Create a 30-day study plan', 'Prepare for finals', 'Best study techniques', 'Organize my subjects'],
-  'Skill Gap Analyzer': ['Analyze my skills for SDE', 'What am I missing for FAANG?', 'Skills vs job description', 'What to learn next?'],
-  'Competitive Exam':   ['JEE study plan', 'Important GATE topics', 'Solve this problem', 'Mock test questions'],
-  'Progress Tracker':   ['How am I doing?', 'Set learning milestones', 'Summarize my progress', 'What\'s my weak area?'],
-};
-
-// ─── Models & Providers ───────────────────────────────────────────────
-type ModelDef = { id: string; name: string; provider: ProviderId };
-
-const MODELS: ModelDef[] = [
-  { id: 'gemini-1.5-flash-latest',                     name: 'Gemini 1.5 Flash',        provider: 'google' },
-  { id: 'gemini-1.5-pro',                              name: 'Gemini 1.5 Pro',          provider: 'google' },
-  { id: 'gemini-2.0-flash',                            name: 'Gemini 2.0 Flash',        provider: 'google' },
-  { id: 'llama-3.3-70b-versatile',                     name: 'Llama 3.3 70B',           provider: 'groq' },
-  { id: 'llama-3.1-8b-instant',                        name: 'Llama 3.1 8B Instant',    provider: 'groq' },
-  { id: 'claude-3-5-sonnet-20241022',                  name: 'Claude 3.5 Sonnet',       provider: 'anthropic' },
-  { id: 'claude-3-haiku-20240307',                     name: 'Claude 3 Haiku',          provider: 'anthropic' },
-  { id: 'openai/gpt-4o-mini',                          name: 'GPT-4o Mini',             provider: 'openrouter' },
-  { id: 'anthropic/claude-3.5-sonnet',                 name: 'Claude 3.5 (OpenRouter)', provider: 'openrouter' },
-  { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',     name: 'Llama 3.3 70B Turbo',    provider: 'together' },
-  { id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',        name: 'Mixtral 8x7B',            provider: 'together' },
-];
-
-const PROVIDERS: Record<ProviderId, { label: string; badge: string; dot: string }> = {
-  google:     { label: 'Google',     badge: 'bg-sky-500/15 text-sky-300 border-sky-500/30',          dot: 'bg-sky-400' },
-  groq:       { label: 'Groq',       badge: 'bg-orange-500/15 text-orange-300 border-orange-500/30', dot: 'bg-orange-400' },
-  anthropic:  { label: 'Anthropic',  badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',    dot: 'bg-amber-400' },
-  openrouter: { label: 'OpenRouter', badge: 'bg-violet-500/15 text-violet-300 border-violet-500/30', dot: 'bg-violet-400' },
-  together:   { label: 'Together',   badge: 'bg-pink-500/15 text-pink-300 border-pink-500/30',        dot: 'bg-pink-400' },
-};
-
-// ─── Code block parser ────────────────────────────────────────────────
+// Code block parser
 type ContentPart = { type: 'text'; content: string } | { type: 'code'; content: string; lang: string };
 
 function parseContent(text: string): ContentPart[] {
@@ -151,7 +78,7 @@ function parseContent(text: string): ContentPart[] {
   return parts.length > 0 ? parts : [{ type: 'text', content: text }];
 }
 
-// ─── CodeBlock component ──────────────────────────────────────────────
+// CodeBlock component
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -179,7 +106,7 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   );
 }
 
-// ─── Message content renderer ─────────────────────────────────────────
+// Message content renderer
 function MessageContent({ text, isStreaming }: { text: string; isStreaming: boolean }) {
   const parts = useMemo(() => parseContent(text), [text]);
   return (
@@ -201,7 +128,7 @@ function MessageContent({ text, isStreaming }: { text: string; isStreaming: bool
   );
 }
 
-// ─── Sidebar conversation row ─────────────────────────────────────────
+// Sidebar conversation row
 type ConvRowProps = {
   conv: Conversation;
   index: number;
@@ -231,7 +158,7 @@ function ConvRow({ conv, index, active, isPinned, onSelect, onDelete, onPin }: C
         )}
         <span className="truncate text-xs">{conv.title}</span>
       </div>
-      {/* Action buttons — revealed on hover */}
+      {/* Action buttons revealed on hover */}
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0 ml-1">
         <button
           title={isPinned ? 'Unpin' : 'Pin to top'}
@@ -254,18 +181,14 @@ function ConvRow({ conv, index, active, isPinned, onSelect, onDelete, onPin }: C
   );
 }
 
-// ─── Hero floating orbs ───────────────────────────────────────────────
+// Hero background
 function HeroOrbs() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      <div className="hero-orb hero-orb-1" />
-      <div className="hero-orb hero-orb-2" />
-      <div className="hero-orb hero-orb-3" />
-    </div>
+    <div className="hero-mesh absolute inset-0 overflow-hidden pointer-events-none" />
   );
 }
 
-// ─── Main Chat Component ──────────────────────────────────────────────
+// Main chat component
 export default function Chat() {
   const {
     conversations, currentConversationId, createConversation, setCurrentConversation,
@@ -274,6 +197,13 @@ export default function Chat() {
     apiKeyGemini, apiKeyGroq, apiKeyOpenRouter, apiKeyAnthropic, apiKeyTogether,
     setApiKeyGemini, setApiKeyGroq, setApiKeyOpenRouter, setApiKeyAnthropic, setApiKeyTogether,
     deleteConversation, pinConversation, theme, setTheme, streak, recordActivity,
+    temperature, setTemperature, tokenLimit, setTokenLimit, reasoningMode, setReasoningMode,
+    memoryEnabled, setMemoryEnabled, providerPriority, setProviderPriority,
+    fallbackModel, setFallbackModel, localModelsEnabled, setLocalModelsEnabled,
+    cloudModelsEnabled, setCloudModelsEnabled, performanceMode, setPerformanceMode,
+    privacyMode, setPrivacyMode, notificationsEnabled, setNotificationsEnabled,
+    keyboardShortcutsEnabled, setKeyboardShortcutsEnabled, agentPreferences, setAgentPreference,
+    importConfiguration,
   } = useAppStore();
 
   const [input, setInput] = useState('');
@@ -289,6 +219,8 @@ export default function Chat() {
   });
   const [inputFocused, setInputFocused] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState('');
+  const [memorySearch, setMemorySearch] = useState('');
+  const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [retryPayload, setRetryPayload] = useState<{
@@ -298,6 +230,7 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importMemoryRef = useRef<HTMLInputElement>(null);
+  const importConfigRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -310,7 +243,11 @@ export default function Chat() {
       return acc;
     }, {});
   }, [memVersion]);
-  const totalRemembered = Object.values(memoryCounts).reduce((s, c) => s + c, 0);
+  const memoryItems = useMemo(() => {
+    void memVersion;
+    return readMemoryItems({ query: memorySearch });
+  }, [memVersion, memorySearch]);
+  const totalRemembered = memoryItems.length + Object.values(memoryCounts).reduce((s, c) => s + c, 0);
 
   const totalUserMessages = useMemo(
     () => conversations.reduce((s, c) => s + c.messages.filter(m => m.role === 'user').length, 0),
@@ -332,8 +269,8 @@ export default function Chat() {
         }
       });
     });
-    const mostUsedAgent = Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
-    const topRatedAgent = Object.entries(agentRatings).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    const mostUsedAgent = Object.entries(agentCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+    const topRatedAgent = Object.entries(agentRatings).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
     return { totalConvs, totalMsgs, mostUsedAgent, topRatedAgent };
   }, [conversations]);
 
@@ -360,6 +297,7 @@ export default function Chat() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      if (!keyboardShortcutsEnabled) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === 'n') { e.preventDefault(); const id = createConversation(); setCurrentConversation(id); }
       if (mod && e.key === 'k') { e.preventDefault(); setIsAgentMenuOpen(true); }
@@ -371,7 +309,7 @@ export default function Chat() {
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [createConversation, setCurrentConversation]);
+  }, [createConversation, setCurrentConversation, keyboardShortcutsEnabled]);
 
   const apiKeyFor = (p: ProviderId) =>
     p === 'google' ? apiKeyGemini :
@@ -379,6 +317,24 @@ export default function Chat() {
     p === 'openrouter' ? apiKeyOpenRouter :
     p === 'anthropic' ? apiKeyAnthropic :
     apiKeyTogether;
+
+  const resolveModelForRequest = (requestedModelId: string, agentId: string, hasImage: boolean) => {
+    const preferredId = agentPreferences[agentId]?.modelId || requestedModelId;
+    const preferred = MODELS.find(m => m.id === preferredId);
+    const fallback = MODELS.find(m => m.id === fallbackModel);
+    const priorityModel = providerPriority
+      .map(provider => MODELS.find(m => m.provider === provider && apiKeyFor(provider)))
+      .find(Boolean);
+    const candidates = [preferred, fallback, priorityModel].filter(Boolean) as ModelDef[];
+    if (hasImage) {
+      return candidates.find(m => m.provider === 'google' && apiKeyFor(m.provider)) || MODELS.find(m => m.provider === 'google') || preferred;
+    }
+    return candidates.find(m => apiKeyFor(m.provider)) || preferred;
+  };
+
+  const requestTemperatureFor = (agentId: string) => agentPreferences[agentId]?.temperature ?? temperature;
+  const reasoningModeFor = (agentId: string) => agentPreferences[agentId]?.reasoningMode ?? reasoningMode;
+  const agentMemoryEnabled = (agentId: string) => agentPreferences[agentId]?.memoryEnabled ?? memoryEnabled;
 
   const handleImageUpload = (file: File | null) => {
     if (!file) return;
@@ -428,7 +384,9 @@ export default function Chat() {
 
   const exportMemory = () => {
     const payload = {
+      version: 3,
       profile: readProfile(),
+      memories: readMemoryItems(),
       agents: AGENTS.reduce<Record<string, { recent: any; summary: string }>>((acc, agent) => {
         acc[agent.id] = { recent: readRecent(agent.id), summary: readSummary(agent.id) };
         return acc;
@@ -453,6 +411,7 @@ export default function Chat() {
       try {
         const parsed = JSON.parse(String(reader.result || '{}'));
         if (parsed.profile) writeProfile(parsed.profile);
+        if (Array.isArray(parsed.memories)) importMemoryItems(parsed.memories);
         if (parsed.agents && typeof parsed.agents === 'object') {
           Object.entries(parsed.agents).forEach(([agentName, val]: [string, any]) => {
             if (val && Array.isArray(val.recent)) writeRecent(agentName, val.recent);
@@ -461,9 +420,57 @@ export default function Chat() {
         }
         refreshMem();
       } catch {
-        window.alert('Could not import memory. Please choose a valid orchestrate_memory.json file.');
+        toast({ title: 'Import failed', description: 'Could not import memory. Please choose a valid orchestrate_memory.json file.' });
       } finally {
         if (importMemoryRef.current) importMemoryRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const exportConfiguration = () => {
+    const payload = {
+      version: 1,
+      selectedModel,
+      selectedAgent,
+      theme,
+      temperature,
+      tokenLimit,
+      reasoningMode,
+      memoryEnabled,
+      providerPriority,
+      fallbackModel,
+      localModelsEnabled,
+      cloudModelsEnabled,
+      performanceMode,
+      privacyMode,
+      notificationsEnabled,
+      keyboardShortcutsEnabled,
+      agentPreferences,
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'orchestrate_config.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const importConfigurationFile = (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result || '{}'));
+        importConfiguration(parsed);
+      } catch {
+        toast({ title: 'Import failed', description: 'Could not import configuration. Please choose a valid orchestrate_config.json file.' });
+      } finally {
+        if (importConfigRef.current) importConfigRef.current.value = '';
       }
     };
     reader.readAsText(file);
@@ -561,7 +568,7 @@ export default function Chat() {
   };
 
   const doSend = async (userMsg: string, imageForRequest: typeof imageAttachment, convId: string, agentId: string, modelId: string) => {
-    const modelInfo = MODELS.find(m => m.id === modelId);
+    const modelInfo = resolveModelForRequest(modelId, agentId, !!imageForRequest);
     if (!modelInfo) {
       addMessage(convId, { role: 'assistant', content: 'No model selected.', agent: 'System' });
       setIsTyping(false);
@@ -588,13 +595,19 @@ export default function Chat() {
     const agentPromptSuffix = AGENT_SYSTEM_PROMPTS[agentId]
       ? `\n\n${AGENT_SYSTEM_PROMPTS[agentId]}`
       : '';
-    const basePrompt = `You are acting as the ${agentId} within OrchestrateAI. Provide a helpful, precise, and professional response.${imageForRequest ? '\nAnalyze any attached image carefully.' : ''}${agentPromptSuffix}\n\nUser: ${userMsg || 'Analyze the attached image.'}`;
-    const fullPrompt = buildPrompt({
-      agent: agentId,
-      profile: readProfile(),
-      userMessage: userMsg || 'Analyze the attached image.',
-      basePrompt,
-    });
+    const routingNote = selectedAgent === 'Auto Orchestrator'
+      ? `\nYou were selected by Auto Orchestrator through contextual routing. State your specialist angle briefly if it helps, then solve the task.`
+      : '';
+    const reasoningNote = `\nReasoning mode: ${reasoningModeFor(agentId)}. Performance mode: ${performanceMode}.`;
+    const basePrompt = `You are acting as the ${agentId} within OrchestrateAI, a multi-agent AI workspace. Provide a helpful, precise, and professional response.${imageForRequest ? '\nAnalyze any attached image carefully.' : ''}${routingNote}${reasoningNote}${agentPromptSuffix}\n\nUser: ${userMsg || 'Analyze the attached image.'}`;
+    const fullPrompt = agentMemoryEnabled(agentId)
+      ? buildPrompt({
+          agent: agentId,
+          profile: readProfile(),
+          userMessage: userMsg || 'Analyze the attached image.',
+          basePrompt,
+        })
+      : basePrompt;
 
     await new Promise(r => setTimeout(r, 800));
     const assistantId = addMessage(convId, { role: 'assistant', content: '', agent: agentId });
@@ -610,6 +623,8 @@ export default function Chat() {
       modelId: modelInfo.id,
       apiKey: key,
       image: imageForRequest,
+      temperature: requestTemperatureFor(agentId),
+      maxTokens: tokenLimit,
       signal: controller.signal,
       onDelta: (chunk) => {
         accumulated += chunk;
@@ -624,6 +639,8 @@ export default function Chat() {
           modelId: modelInfo.id,
           apiKey: key,
           image: imageForRequest,
+          temperature: requestTemperatureFor(agentId),
+          maxTokens: tokenLimit,
           signal: controller.signal,
         });
         accumulated = fallback || '';
@@ -638,7 +655,7 @@ export default function Chat() {
       }
     }
 
-    if (accumulated.trim()) {
+    if (accumulated.trim() && agentMemoryEnabled(agentId)) {
       appendRecent(agentId, 'assistant', accumulated);
     }
     setIsStreaming(false);
@@ -661,17 +678,34 @@ export default function Chat() {
     setImageAttachment(null);
     setRetryPayload(null);
     const memMessage = imageForRequest ? `${userMsg || 'Analyze this image'}\n\nAttached: ${imageForRequest.name}` : userMsg;
+    const routedAgent = routeAgentForMessage(selectedAgent, {
+      text: memMessage,
+      hasImage: !!imageForRequest,
+      recentAgent: currentConversation?.lastAgentId,
+      availableProviders: providerPriority,
+      recentMemoryHits: [],
+    });
 
     addMessage(convId, { role: 'user', content: memMessage });
-    appendRecent(selectedAgent, 'user', memMessage);
-    refreshMem();
+    if (agentMemoryEnabled(routedAgent)) {
+      appendRecent(routedAgent, 'user', memMessage);
+      upsertMemoryItem({
+        text: memMessage.length > 180 ? memMessage.slice(0, 177) + '...' : memMessage,
+        category: 'context',
+        scope: 'session',
+        agentId: routedAgent,
+        importance: 2,
+        source: 'conversation',
+      });
+      refreshMem();
+    }
     recordActivity();
-    updateProfileFromMessage(memMessage).catch(() => {});
+    if (memoryEnabled) updateProfileFromMessage(memMessage).catch(() => {});
     if (isFirstMessage || conversations.find(c => c.id === convId)?.messages.length === 0) {
       autoGenerateTitle(convId, userMsg).catch(() => {});
     }
     setIsTyping(true);
-    await doSend(userMsg, imageForRequest, convId, selectedAgent, selectedModel);
+    await doSend(userMsg, imageForRequest, convId, routedAgent, selectedModel);
   };
 
   const handleRetry = async () => {
@@ -706,7 +740,7 @@ export default function Chat() {
     google: 'AIzaSy...', groq: 'gsk_...', openrouter: 'sk-or-v1...', anthropic: 'sk-ant-...', together: 'tgp_...',
   };
 
-  // ─── Sidebar ──────────────────────────────────────────────────────────
+  // Sidebar
   const SidebarContent = () => (
     <>
       <div className="p-4 flex items-center justify-between">
@@ -727,7 +761,7 @@ export default function Chat() {
           className="w-full justify-start gap-2 btn-gradient-primary text-white border-0 shadow-md shadow-primary/20"
         >
           <Plus className="w-4 h-4" />
-          New Chat <span className="ml-auto text-white/50 text-[10px] hidden sm:block">⌘N</span>
+          New Chat <span className="ml-auto text-white/50 text-[10px] hidden sm:block">Ctrl+N</span>
         </Button>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -743,7 +777,7 @@ export default function Chat() {
       <ScrollArea className="flex-1 px-3">
         <div className="space-y-1 pb-2">
 
-          {/* ── Pinned section ───────────────────────────── */}
+          {/* Pinned section */}
           {pinnedConvs.length > 0 && (
             <div className="mb-1">
               <div className="flex items-center gap-1.5 px-2 py-1.5 mb-1">
@@ -768,7 +802,7 @@ export default function Chat() {
             </div>
           )}
 
-          {/* ── Recents section ──────────────────────────── */}
+          {/* Recents section */}
           {pinnedConvs.length > 0 && unpinnedConvs.length > 0 && (
             <div className="flex items-center gap-1.5 px-2 py-1 mb-1">
               <MessageSquare className="w-3 h-3 text-muted-foreground/60" />
@@ -805,20 +839,25 @@ export default function Chat() {
               Settings
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[520px] glass-card max-h-[88vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[760px] glass-card max-h-[88vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5 text-primary" />
-                Configuration
+                AI Control Center
               </DialogTitle>
-              <DialogDescription>API keys, appearance, and usage stats.</DialogDescription>
+              <DialogDescription>Models, agent behavior, memory, privacy, and provider routing.</DialogDescription>
             </DialogHeader>
 
             <Tabs defaultValue="keys" className="mt-2">
-              <TabsList className="w-full bg-foreground/5">
-                <TabsTrigger value="keys" className="flex-1 text-xs"><KeyRound className="w-3.5 h-3.5 mr-1.5" />API Keys</TabsTrigger>
-                <TabsTrigger value="appearance" className="flex-1 text-xs"><Sun className="w-3.5 h-3.5 mr-1.5" />Appearance</TabsTrigger>
-                <TabsTrigger value="stats" className="flex-1 text-xs"><BarChart3 className="w-3.5 h-3.5 mr-1.5" />Stats</TabsTrigger>
+              <TabsList className="w-full bg-foreground/5 grid grid-cols-3 sm:grid-cols-8 h-auto">
+                <TabsTrigger value="keys" className="text-xs"><KeyRound className="w-3.5 h-3.5 mr-1.5" />Keys</TabsTrigger>
+                <TabsTrigger value="models" className="text-xs"><SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />Models</TabsTrigger>
+                <TabsTrigger value="agents" className="text-xs"><Wand2 className="w-3.5 h-3.5 mr-1.5" />Agents</TabsTrigger>
+                <TabsTrigger value="memory" className="text-xs"><Database className="w-3.5 h-3.5 mr-1.5" />Memory</TabsTrigger>
+                <TabsTrigger value="appearance" className="text-xs"><Sun className="w-3.5 h-3.5 mr-1.5" />Theme</TabsTrigger>
+                <TabsTrigger value="stats" className="text-xs"><BarChart3 className="w-3.5 h-3.5 mr-1.5" />Stats</TabsTrigger>
+                <TabsTrigger value="keyboard" className="text-xs"><Keyboard className="w-3.5 h-3.5 mr-1.5" />Keyboard</TabsTrigger>
+                <TabsTrigger value="developer" className="text-xs"><Code className="w-3.5 h-3.5 mr-1.5" />Dev</TabsTrigger>
               </TabsList>
 
               <TabsContent value="appearance" className="mt-4">
@@ -841,6 +880,131 @@ export default function Chat() {
                     </button>
                   ))}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="models" className="mt-4 space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                    <label className="text-xs font-semibold uppercase text-muted-foreground">Default model</label>
+                    <select aria-label="Default model" value={selectedModel} onChange={e => setSelectedModel(e.target.value)} className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                      {MODELS.map(m => <option key={m.id} value={m.id}>{m.name} - {PROVIDERS[m.provider].label}</option>)}
+                    </select>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                    <label className="text-xs font-semibold uppercase text-muted-foreground">Fallback model</label>
+                    <select aria-label="Fallback model" value={fallbackModel} onChange={e => setFallbackModel(e.target.value)} className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                      {MODELS.map(m => <option key={m.id} value={m.id}>{m.name} - {PROVIDERS[m.provider].label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="flex items-center justify-between text-sm"><span>Temperature</span><span className="text-primary">{temperature.toFixed(1)}</span></div>
+                    <input aria-label="Temperature" type="range" min="0" max="2" step="0.1" value={temperature} onChange={e => setTemperature(Number(e.target.value))} className="w-full mt-3 accent-violet-500" />
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="flex items-center justify-between text-sm"><span>Token limit</span><span className="text-primary">{tokenLimit}</span></div>
+                    <input aria-label="Token limit" type="range" min="512" max="8192" step="256" value={tokenLimit} onChange={e => setTokenLimit(Number(e.target.value))} className="w-full mt-3 accent-violet-500" />
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                    <label className="text-sm">Reasoning mode</label>
+                    <select aria-label="Reasoning mode" value={reasoningMode} onChange={e => setReasoningMode(e.target.value as any)} className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                      <option value="fast">Fast</option>
+                      <option value="balanced">Balanced</option>
+                      <option value="deep">Deep</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                  <div className="text-xs font-semibold uppercase text-muted-foreground mb-2">Provider priority routing</div>
+                  <div className="grid sm:grid-cols-5 gap-2">
+                    {providerPriority.map((provider, index) => (
+                      <button
+                        key={provider}
+                        onClick={() => {
+                          const next = [...providerPriority];
+                          if (index > 0) [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          setProviderPriority(next);
+                        }}
+                        className="rounded-lg border border-border/60 bg-background/50 px-2 py-2 text-xs hover:border-primary/40 transition-colors"
+                        title="Click to move earlier"
+                      >
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${PROVIDERS[provider].dot}`} />
+                        {index + 1}. {PROVIDERS[provider].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {[
+                    { icon: Cloud, label: 'Cloud models', value: cloudModelsEnabled, set: setCloudModelsEnabled },
+                    { icon: HardDrive, label: 'Local model lane', value: localModelsEnabled, set: setLocalModelsEnabled },
+                  ].map(item => (
+                    <button key={item.label} onClick={() => item.set(!item.value)} className={`rounded-xl border p-3 text-left transition-all ${item.value ? 'border-primary/50 bg-primary/10' : 'border-border/60 bg-foreground/[0.02]'}`}>
+                      <item.icon className="w-4 h-4 text-primary mb-2" />
+                      <div className="text-sm font-medium">{item.label}</div>
+                      <div className="text-xs text-muted-foreground">{item.value ? 'Enabled' : 'Disabled'}</div>
+                    </button>
+                  ))}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="agents" className="mt-4 space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {AGENTS.map(agent => {
+                    const pref = agentPreferences[agent.id] || {};
+                    return (
+                      <div key={agent.id} className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <agent.icon className={`w-4 h-4 ${agent.iconColor}`} />
+                          <div className="text-sm font-semibold">{agent.id}</div>
+                        </div>
+                        <select aria-label={`${agent.id} model`} value={pref.modelId || ''} onChange={e => setAgentPreference(agent.id, { modelId: e.target.value || undefined })} className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs">
+                          <option value="">Use default model</option>
+                          {MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <div className="flex items-center justify-between text-xs">
+                          <span>Agent temperature</span>
+                          <span>{(pref.temperature ?? temperature).toFixed(1)}</span>
+                        </div>
+                        <input aria-label={`${agent.id} temperature`} type="range" min="0" max="2" step="0.1" value={pref.temperature ?? temperature} onChange={e => setAgentPreference(agent.id, { temperature: Number(e.target.value) })} className="w-full accent-violet-500" />
+                        <button onClick={() => setAgentPreference(agent.id, { memoryEnabled: !(pref.memoryEnabled ?? true) })} className={`w-full rounded-lg border px-3 py-2 text-xs ${pref.memoryEnabled === false ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+                          {(pref.memoryEnabled ?? true) ? 'Memory enabled' : 'Memory disabled'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="memory" className="mt-4 space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {[
+                    { icon: Database, label: 'Persistent memory', value: memoryEnabled, set: setMemoryEnabled },
+                    { icon: Shield, label: 'Privacy mode', value: privacyMode, set: setPrivacyMode },
+                    { icon: Bell, label: 'Notifications', value: notificationsEnabled, set: setNotificationsEnabled },
+                    { icon: Keyboard, label: 'Keyboard shortcuts', value: keyboardShortcutsEnabled, set: setKeyboardShortcutsEnabled },
+                  ].map(item => (
+                    <button key={item.label} onClick={() => item.set(!item.value)} className={`rounded-xl border p-3 text-left transition-all ${item.value ? 'border-primary/50 bg-primary/10' : 'border-border/60 bg-foreground/[0.02]'}`}>
+                      <item.icon className="w-4 h-4 text-primary mb-2" />
+                      <div className="text-sm font-medium">{item.label}</div>
+                      <div className="text-xs text-muted-foreground">{item.value ? 'Enabled' : 'Disabled'}</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                  <label className="text-sm flex items-center gap-2"><Gauge className="w-4 h-4 text-primary" />Performance mode</label>
+                  <select aria-label="Performance mode" value={performanceMode} onChange={e => setPerformanceMode(e.target.value as any)} className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-sm">
+                    <option value="quality">Quality</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="speed">Speed</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" className="gap-2" onClick={exportConfiguration}><Download className="w-4 h-4" />Export config</Button>
+                  <Button variant="outline" className="gap-2" onClick={() => importConfigRef.current?.click()}><Upload className="w-4 h-4" />Import config</Button>
+                </div>
+                <input aria-label="Import configuration file" ref={importConfigRef} type="file" accept="application/json,.json" className="hidden" onChange={e => importConfigurationFile(e.target.files?.[0] || null)} />
               </TabsContent>
 
               <TabsContent value="keys" className="mt-4 space-y-3">
@@ -905,6 +1069,36 @@ export default function Chat() {
                   ))}
                 </div>
               </TabsContent>
+
+              <TabsContent value="keyboard" className="mt-4 space-y-3">
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Active shortcuts</div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between"><span>New chat</span><span className="text-muted-foreground">Ctrl+N</span></div>
+                    <div className="flex justify-between"><span>Agent picker</span><span className="text-muted-foreground">Ctrl+K</span></div>
+                    <div className="flex justify-between"><span>Close overlays</span><span className="text-muted-foreground">Esc</span></div>
+                    <div className="flex justify-between"><span>Send message</span><span className="text-muted-foreground">Enter</span></div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="developer" className="mt-4 space-y-3">
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Runtime diagnostics</div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <div>Conversations: {stats.totalConvs}</div>
+                    <div>Messages: {stats.totalMsgs}</div>
+                    <div>Profile facts: {totalFactCount(profile)}</div>
+                    <div>Memory records: {memoryItems.length}</div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Local storage keys</div>
+                  <div className="text-xs text-muted-foreground break-all">
+                    {Object.keys(localStorage).join(', ') || 'No keys present'}
+                  </div>
+                </div>
+              </TabsContent>
             </Tabs>
           </DialogContent>
         </Dialog>
@@ -920,7 +1114,7 @@ export default function Chat() {
     </>
   );
 
-  // ─── Memory sub-components ────────────────────────────────────────────
+  // Memory sub-components
   const FactChip = ({ text }: { text: string }) => (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-primary/10 border border-primary/20 text-foreground/90 transition-all duration-200 hover:bg-primary/15 hover:border-primary/40">
       {text}
@@ -952,12 +1146,101 @@ export default function Chat() {
       }
     </div>
   );
+  const MemoryRecordCard = ({ item }: { item: MemoryItem }) => {
+    const draft = editingMemory?.id === item.id ? editingMemory : null;
+    const agentLabel = item.agentId || (item.scope === 'global' ? 'Shared' : 'Session');
+    return (
+      <div className="rounded-xl border border-border/60 bg-foreground/[0.025] p-3 space-y-2">
+        {draft ? (
+          <>
+            <Textarea
+              value={draft.text}
+              onChange={e => setEditingMemory({ ...draft, text: e.target.value })}
+              className="min-h-[72px] bg-background/60 border-border/60 text-sm"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                aria-label="Memory category"
+                value={draft.category}
+                onChange={e => setEditingMemory({ ...draft, category: e.target.value as MemoryCategory })}
+                className="rounded-lg border border-border/60 bg-background/70 px-2 py-2 text-xs"
+              >
+                {MEMORY_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+              <select
+                aria-label="Memory scope"
+                value={draft.scope}
+                onChange={e => setEditingMemory({ ...draft, scope: e.target.value as MemoryScope })}
+                className="rounded-lg border border-border/60 bg-background/70 px-2 py-2 text-xs"
+              >
+                <option value="global">Shared</option>
+                <option value="agent">Agent private</option>
+                <option value="session">Session</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Importance</span>
+              <input
+                aria-label="Memory importance"
+                type="range"
+                min="1"
+                max="5"
+                value={draft.importance}
+                onChange={e => setEditingMemory({ ...draft, importance: Number(e.target.value) })}
+                className="flex-1 accent-violet-500"
+              />
+              <span>{draft.importance}/5</span>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" className="gap-1.5 btn-gradient-primary text-white" onClick={() => {
+                updateMemoryItem(item.id, draft);
+                setEditingMemory(null);
+                refreshMem();
+              }}>
+                <Save className="w-3.5 h-3.5" />Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditingMemory(null)}>Cancel</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm leading-relaxed text-foreground/90">{item.text}</p>
+              <div className="flex gap-1 shrink-0">
+                <button title="Edit memory" className="p-1.5 rounded-md hover:bg-foreground/10 text-muted-foreground hover:text-foreground" onClick={() => setEditingMemory(item)}>
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button title="Delete memory" className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-300" onClick={() => { deleteMemoryItem(item.id); refreshMem(); }}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                {item.scope === 'agent' && (
+                  <button
+                    title="Promote to shared"
+                    className="p-1.5 rounded-md hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-300"
+                    onClick={() => { promoteMemoryItemToShared(item.id); refreshMem(); }}
+                  >
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full border border-border/60 px-2 py-0.5">{item.category}</span>
+              <span className="rounded-full border border-border/60 px-2 py-0.5">{agentLabel}</span>
+              <span className="rounded-full border border-border/60 px-2 py-0.5">Importance {item.importance}/5</span>
+              <span className="ml-auto">{new Date(item.updatedAt).toLocaleDateString()}</span>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const currentModel = MODELS.find(m => m.id === selectedModel);
   const currentAgent = AGENTS.find(a => a.id === selectedAgent);
   const chips = PROMPT_CHIPS[selectedAgent] || PROMPT_CHIPS['Auto Orchestrator'];
 
-  // ─── Render ───────────────────────────────────────────────────────────
+  // Render
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-sans">
       {isSidebarOpen && (
@@ -1032,13 +1315,46 @@ export default function Chat() {
               <SheetContent className="bg-card/95 backdrop-blur-xl border-border/60 text-foreground sm:max-w-md overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle className="flex items-center gap-2"><Brain className="w-5 h-5 text-primary" />Your Memory</SheetTitle>
-                  <SheetDescription>Stored locally in this browser only.</SheetDescription>
+                  <SheetDescription>Editable local memory with shared, agent-private, and session scopes.</SheetDescription>
                 </SheetHeader>
+                <div className="relative mt-5">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={memorySearch}
+                    onChange={e => setMemorySearch(e.target.value)}
+                    placeholder="Search memories, tags, agents..."
+                    className="pl-8 h-9 text-xs bg-foreground/5 border-border/60 focus-visible:ring-primary/30"
+                  />
+                </div>
                 {totalFactCount(profile) === 0 && totalRemembered === 0 ? <MemoryEmpty /> : (
                   <div className="mt-6 space-y-4">
                     <MemorySection icon={User}      title="Who you are"    items={profile.identity} accent="bg-sky-500/15 text-sky-300" />
                     <MemorySection icon={Flag}      title="Your goals"     items={profile.goals}    accent="bg-amber-500/15 text-amber-300" />
                     <MemorySection icon={BookMarked}title="Recent context" items={profile.context}  accent="bg-emerald-500/15 text-emerald-300" />
+                    <div className="rounded-xl glass-card p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Memory records</div>
+                        <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => {
+                          const item = upsertMemoryItem({
+                            text: 'New memory',
+                            category: 'context',
+                            scope: 'global',
+                            importance: 3,
+                            source: 'manual',
+                          });
+                          setEditingMemory(item);
+                          refreshMem();
+                        }}>
+                          <Plus className="w-3.5 h-3.5" />Add
+                        </Button>
+                      </div>
+                      <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1 custom-scrollbar">
+                        {memoryItems.length
+                          ? memoryItems.map(item => <MemoryRecordCard key={item.id} item={item} />)
+                          : <p className="text-xs text-muted-foreground text-center py-5">No memory records match your search.</p>
+                        }
+                      </div>
+                    </div>
                     <div className="rounded-xl glass-card p-4">
                       <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Per-agent activity</div>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -1066,7 +1382,7 @@ export default function Chat() {
                     <Upload className="w-4 h-4" /> Import
                   </Button>
                 </div>
-                <input ref={importMemoryRef} type="file" accept="application/json,.json" className="hidden" onChange={e => importMemory(e.target.files?.[0] || null)} />
+                <input aria-label="Import memory file" ref={importMemoryRef} type="file" accept="application/json,.json" className="hidden" onChange={e => importMemory(e.target.files?.[0] || null)} />
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" className="mt-2 w-full border-red-500/30 bg-red-500/10 text-red-300 hover:text-red-200 hover:bg-red-500/15">
@@ -1093,7 +1409,7 @@ export default function Chat() {
                 <Button variant="outline" className="gap-2 bg-foreground/5 border-border/60 text-sm transition-all duration-200 ease-out hover:scale-105 hover:border-primary/40 hover:shadow-md hover:shadow-primary/20">
                   {currentAgent && React.createElement(currentAgent.icon, { className: `w-4 h-4 ${currentAgent.iconColor}` })}
                   <span className="hidden sm:inline truncate max-w-[120px]">{selectedAgent}</span>
-                  <span className="text-muted-foreground/40 text-[10px] hidden sm:block">⌘K</span>
+                  <span className="text-muted-foreground/40 text-[10px] hidden sm:block">Ctrl+K</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-72 glass-card max-h-[420px] overflow-y-auto">
@@ -1132,7 +1448,7 @@ export default function Chat() {
                 </div>
                 <h2 className="text-3xl sm:text-4xl font-bold tracking-tight shimmer-text">How can I help you today?</h2>
                 <p className="text-muted-foreground text-base sm:text-lg max-w-xl mx-auto">
-                  OrchestrateAI — your command center for career, code, and learning.
+                  OrchestrateAI - your command center for career, code, and learning.
                 </p>
                 {totalUserMessages > 0 && (
                   <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-2">
@@ -1309,7 +1625,7 @@ export default function Chat() {
 
             <div className={`relative bg-card/80 backdrop-blur-sm border border-border/60 rounded-xl shadow-sm flex items-end transition-all duration-300 ${inputFocused ? 'animate-input-glow border-primary/50' : ''}`}>
               <div className="p-2 pb-2.5">
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e.target.files?.[0] || null)} />
+                <input aria-label="Attach image" ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(e.target.files?.[0] || null)} />
                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 rounded-lg transition-all duration-200 hover:scale-110" onClick={() => fileInputRef.current?.click()}>
                   <ImageIcon className="w-4 h-4" />
                 </Button>
@@ -1371,7 +1687,7 @@ export default function Chat() {
                 )}
               </div>
             </div>
-            <p className="text-center text-[10px] text-muted-foreground/40 mt-2">Enter to send · Shift+Enter for new line · ⌘K for agents · ⌘N for new chat</p>
+            <p className="text-center text-[10px] text-muted-foreground/40 mt-2">Enter to send | Shift+Enter for new line | Ctrl+K for agents | Ctrl+N for new chat</p>
           </div>
         </div>
       </div>

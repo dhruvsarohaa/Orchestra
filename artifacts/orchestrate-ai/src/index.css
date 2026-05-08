@@ -54,42 +54,42 @@
 }
 
 :root {
-  --background: 226 47% 5%;
-  --foreground: 210 20% 98%;
-  --border: 226 30% 15%;
-  --input: 226 30% 15%;
-  --ring: 258 90% 66%;
+  --background: 0 0% 99%;
+  --foreground: 226 47% 8%;
+  --border: 226 20% 90%;
+  --input: 226 20% 92%;
+  --ring: 258 90% 60%;
 
-  --card: 226 40% 8%;
-  --card-foreground: 210 20% 98%;
-  --card-border: 226 30% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 226 47% 8%;
+  --card-border: 226 20% 90%;
 
-  --sidebar: 226 47% 5%;
-  --sidebar-foreground: 210 20% 98%;
-  --sidebar-border: 226 30% 15%;
-  --sidebar-primary: 258 90% 66%;
+  --sidebar: 226 25% 96%;
+  --sidebar-foreground: 226 47% 8%;
+  --sidebar-border: 226 20% 88%;
+  --sidebar-primary: 258 90% 60%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 226 30% 15%;
-  --sidebar-accent-foreground: 210 20% 98%;
-  --sidebar-ring: 258 90% 66%;
+  --sidebar-accent: 226 20% 92%;
+  --sidebar-accent-foreground: 226 47% 8%;
+  --sidebar-ring: 258 90% 60%;
 
-  --popover: 226 40% 8%;
-  --popover-foreground: 210 20% 98%;
-  --popover-border: 226 30% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 226 47% 8%;
+  --popover-border: 226 20% 90%;
 
-  --primary: 258 90% 66%;
+  --primary: 258 90% 60%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 226 30% 15%;
-  --secondary-foreground: 210 20% 98%;
+  --secondary: 226 20% 92%;
+  --secondary-foreground: 226 47% 8%;
 
-  --muted: 226 30% 15%;
-  --muted-foreground: 215 20% 65%;
+  --muted: 226 20% 95%;
+  --muted-foreground: 226 15% 40%;
 
-  --accent: 226 30% 15%;
-  --accent-foreground: 210 20% 98%;
+  --accent: 226 20% 95%;
+  --accent-foreground: 226 47% 8%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 84% 55%;
   --destructive-foreground: 0 0% 100%;
 
   --app-font-sans: 'Inter', sans-serif;
@@ -138,45 +138,7 @@
   --destructive-foreground: 0 0% 100%;
 }
 
-.light {
-  --background: 0 0% 99%;
-  --foreground: 226 47% 8%;
-  --border: 226 20% 90%;
-  --input: 226 20% 92%;
-  --ring: 258 90% 60%;
-
-  --card: 0 0% 100%;
-  --card-foreground: 226 47% 8%;
-  --card-border: 226 20% 90%;
-
-  --sidebar: 226 25% 96%;
-  --sidebar-foreground: 226 47% 8%;
-  --sidebar-border: 226 20% 88%;
-  --sidebar-primary: 258 90% 60%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 226 20% 92%;
-  --sidebar-accent-foreground: 226 47% 8%;
-  --sidebar-ring: 258 90% 60%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 226 47% 8%;
-  --popover-border: 226 20% 90%;
-
-  --primary: 258 90% 60%;
-  --primary-foreground: 0 0% 100%;
-
-  --secondary: 226 20% 92%;
-  --secondary-foreground: 226 47% 8%;
-
-  --muted: 226 20% 95%;
-  --muted-foreground: 226 15% 40%;
-
-  --accent: 226 20% 95%;
-  --accent-foreground: 226 47% 8%;
-
-  --destructive: 0 84% 55%;
-  --destructive-foreground: 0 0% 100%;
-}
+.light {}
 
 @layer base {
   * {
@@ -233,11 +195,20 @@
 }
 
 .streaming-cursor::after {
-  content: '▍';
+  content: '|';
   display: inline-block;
   margin-left: 2px;
   color: hsl(var(--primary));
   animation: cursor-blink 1s step-start infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .glass-card {
@@ -270,7 +241,7 @@
   animation: shimmer 3s linear infinite;
 }
 
-/* ── Custom scrollbar ── */
+/* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar { width: 5px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
@@ -282,50 +253,18 @@
 .flex-col::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
 * { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
 
-/* ── Hero floating orbs ── */
-@keyframes orb-float-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33%       { transform: translate(40px, -60px) scale(1.1); }
-  66%       { transform: translate(-30px, 30px) scale(0.95); }
-}
-@keyframes orb-float-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  40%       { transform: translate(-50px, 40px) scale(1.08); }
-  70%       { transform: translate(35px, -25px) scale(0.92); }
-}
-@keyframes orb-float-3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50%       { transform: translate(25px, 50px) scale(1.05); }
+/* Hero mesh */
+.hero-mesh {
+  background:
+    linear-gradient(hsl(var(--foreground) / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px),
+    radial-gradient(circle at 45% 30%, hsl(199 89% 48% / 0.14), transparent 36%),
+    radial-gradient(circle at 55% 72%, hsl(258 90% 66% / 0.16), transparent 42%);
+  background-size: 44px 44px, 44px 44px, 100% 100%, 100% 100%;
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
 }
 
-.hero-orb {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(80px);
-  opacity: 0.25;
-  pointer-events: none;
-}
-.hero-orb-1 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, hsl(258 90% 66%), transparent 70%);
-  top: -80px; left: 10%;
-  animation: orb-float-1 14s ease-in-out infinite;
-}
-.hero-orb-2 {
-  width: 350px; height: 350px;
-  background: radial-gradient(circle, hsl(199 89% 48%), transparent 70%);
-  bottom: 20px; right: 10%;
-  animation: orb-float-2 18s ease-in-out infinite;
-}
-.hero-orb-3 {
-  width: 280px; height: 280px;
-  background: radial-gradient(circle, hsl(280 80% 60%), transparent 70%);
-  top: 40%; left: 50%;
-  transform: translate(-50%, -50%);
-  animation: orb-float-3 22s ease-in-out infinite;
-}
-
-/* ── Noise/grain texture overlay ── */
+/* Noise/grain texture overlay */
 .bg-noise::after {
   content: '';
   position: fixed;
@@ -337,9 +276,9 @@
   background-size: 150px 150px;
 }
 
-/* ── Mobile tweaks ── */
+/* Mobile tweaks */
 @media (max-width: 640px) {
-  .hero-orb-1 { width: 260px; height: 260px; }
-  .hero-orb-2 { width: 220px; height: 220px; }
-  .hero-orb-3 { width: 180px; height: 180px; }
+  .hero-mesh {
+    background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+  }
 }

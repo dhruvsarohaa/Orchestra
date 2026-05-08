@@ -1,0 +1,1 @@
+export { searchMemoryItems } from '../memory';
